@@ -1,0 +1,70 @@
+{
+  "categories": [
+    { "id": "music", "title": "Музыка", "icon": "🎵", "difficulty": 1 },
+    { "id": "movies", "title": "Кино и сериалы", "icon": "🎬", "difficulty": 1 },
+    { "id": "games", "title": "Игры", "icon": "🎮", "difficulty": 1 },
+    { "id": "random", "title": "Рандом", "icon": "🎲", "difficulty": 1 }
+  ],
+  "questions": [
+    {
+      "id": "q_music_1",
+      "categoryId": "music",
+      "text": "Какой инструмент обычно имеет 6 струн?",
+      "options": [
+        { "id": "a", "text": "Скрипка" },
+        { "id": "b", "text": "Гитара" },
+        { "id": "c", "text": "Флейта" },
+        { "id": "d", "text": "Тромбон" }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Классическая гитара обычно имеет 6 струн.",
+      "difficulty": 1,
+      "timeLimitSec": 15
+    },
+    {
+      "id": "q_movies_1",
+      "categoryId": "movies",
+      "text": "Какой цвет у светового меча у Йоды в классической трилогии/приквелах?",
+      "options": [
+        { "id": "a", "text": "Синий" },
+        { "id": "b", "text": "Красный" },
+        { "id": "c", "text": "Зелёный" },
+        { "id": "d", "text": "Фиолетовый" }
+      ],
+      "correctOptionId": "c",
+      "explanation": "У Йоды — зелёный меч.",
+      "difficulty": 1,
+      "timeLimitSec": 15
+    },
+    {
+      "id": "q_games_1",
+      "categoryId": "games",
+      "text": "Как называется жанр игр, где часто собирают лут и улучшают экипировку (например, Diablo)?",
+      "options": [
+        { "id": "a", "text": "Roguelike" },
+        { "id": "b", "text": "Hack and slash" },
+        { "id": "c", "text": "Visual novel" },
+        { "id": "d", "text": "City builder" }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Diablo часто относят к hack and slash/ARPG с лутом.",
+      "difficulty": 1,
+      "timeLimitSec": 18
+    },
+    {
+      "id": "q_random_1",
+      "categoryId": "random",
+      "text": "Сколько минут в одном часе?",
+      "options": [
+        { "id": "a", "text": "30" },
+        { "id": "b", "text": "45" },
+        { "id": "c", "text": "60" },
+        { "id": "d", "text": "90" }
+      ],
+      "correctOptionId": "c",
+      "explanation": "60 минут.",
+      "difficulty": 1,
+      "timeLimitSec": 10
+    }
+  ]
+}

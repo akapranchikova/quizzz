@@ -1,0 +1,15 @@
+{
+  "name": "quizzz",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["server", "client"],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev --workspace server\" \"npm run dev --workspace client\"",
+    "build": "npm run build --workspace client",
+    "lint": "npm run lint --workspace client || true",
+    "format": "npm run format --workspace client || true"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
