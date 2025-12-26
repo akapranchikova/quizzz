@@ -1,0 +1,44 @@
+{
+  "characters": [
+    {
+      "id": "spark",
+      "name": "Искра",
+      "ability": {
+        "id": "fifty",
+        "name": "50/50",
+        "description": "Убирает 2 неверных варианта на твоём устройстве (1 раз за игру).",
+        "usesPerGame": 1
+      }
+    },
+    {
+      "id": "glitch",
+      "name": "Глитч",
+      "ability": {
+        "id": "shuffle_enemy",
+        "name": "Перемешать кнопки",
+        "description": "Перемешивает порядок ответов у выбранного игрока (1 раз за игру).",
+        "usesPerGame": 1
+      }
+    },
+    {
+      "id": "frost",
+      "name": "Фрост",
+      "ability": {
+        "id": "freeze_enemy",
+        "name": "Заморозка",
+        "description": "Блокирует выбор ответа у выбранного игрока на 3 секунды (1 раз за игру).",
+        "usesPerGame": 1
+      }
+    },
+    {
+      "id": "shieldy",
+      "name": "Щиток",
+      "ability": {
+        "id": "shield",
+        "name": "Щит",
+        "description": "Отменяет одну пакость, направленную на тебя (пассивно, 1 раз за игру).",
+        "usesPerGame": 1
+      }
+    }
+  ]
+}
