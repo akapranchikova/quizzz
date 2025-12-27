@@ -60,6 +60,8 @@ export interface GameState {
   categories: Category[];
   characters: Character[];
   players: PlayerState[];
+  hostPlayerId: string | null;
+  preferredHost?: string | null;
   currentQuestion: Question | null;
   questionStartTime: number | null;
   answerStats: Record<string, number>;

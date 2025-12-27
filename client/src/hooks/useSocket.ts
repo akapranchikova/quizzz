@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { GameState } from '../types';
 
-const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5174';
+const defaultHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const defaultPort = import.meta.env.VITE_SOCKET_PORT || '5174';
+const socketUrl = import.meta.env.VITE_SOCKET_URL || `${typeof window !== 'undefined' ? window.location.protocol : 'http:'}//${defaultHost}:${defaultPort}`;
 
 export function useSocket() {
   const [socket, setSocket] = useState<Socket | null>(null);

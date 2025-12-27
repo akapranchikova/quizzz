@@ -12,7 +12,7 @@ export default function AdminPage() {
   const pickCategory = (categoryId: string) => socket?.emit('admin:pickCategory', { categoryId });
   const advance = () => socket?.emit('admin:next');
 
-  const nextLabel = state?.phase === 'question' ? 'Показать ответ' : 'Следующий раунд';
+  const nextLabel = state?.phase === 'question' ? 'Пропустить ожидание' : 'Следующий раунд';
 
   return (
     <div className="app-shell">

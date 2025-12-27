@@ -6,7 +6,20 @@ import { useSocket } from '../hooks/useSocket';
 
 export default function ScreenPage() {
   const { socket, state, connected } = useSocket();
-  const controllerUrl = `${window.location.protocol}//${window.location.host}/controller`;
+  const hostForQr = state?.preferredHost || window.location.hostname;
+  const controllerUrl = `${window.location.protocol}//${hostForQr}${window.location.port ? `:${window.location.port}` : ''}/controller`;
+  const players = state?.players || [];
+  const currentQuestion = state?.currentQuestion;
+  const answeredPlayers =
+    state?.phase === 'reveal' && currentQuestion
+      ? players
+          .filter((p) => p.lastAnswer)
+          .map((p) => {
+            const isCorrect = p.lastAnswer?.optionId === currentQuestion.correctOptionId;
+            return { ...p, isCorrect };
+          })
+          .sort((a, b) => Number(b.isCorrect) - Number(a.isCorrect))
+      : [];
 
   return (
     <div className="app-shell">
@@ -34,7 +47,7 @@ export default function ScreenPage() {
 
       <div className="card" style={{ marginTop: 14 }}>
         <div className="section-title">Игроки</div>
-        <PlayerList players={state?.players || []} characters={state?.characters || []} showReady={true} showScore={true} />
+        <PlayerList players={players} characters={state?.characters || []} showReady={true} showScore={true} />
       </div>
 
       {state?.phase === 'category_pick' && (
@@ -63,10 +76,33 @@ export default function ScreenPage() {
         />
       )}
 
+      {state?.phase === 'reveal' && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="section-title">Результаты вопроса</div>
+          {answeredPlayers.length ? (
+            <div className="player-grid">
+              {answeredPlayers.map((p) => (
+                <div key={p.id} className="player-card" style={{ borderColor: p.isCorrect ? '#22c55e' : undefined }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong>{p.nickname}</strong>
+                    {p.isCorrect ? <span className="badge">+{p.lastAnswer?.pointsEarned || 0} очков</span> : <span className="badge">Мимо</span>}
+                  </div>
+                  <div className="small-muted">
+                    Ответ: {currentQuestion?.options.find((o) => o.id === p.lastAnswer?.optionId)?.text || '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="small-muted">Никто не ответил вовремя</div>
+          )}
+        </div>
+      )}
+
       {state?.leaderboard?.length ? (
         <div className="card" style={{ marginTop: 14 }}>
           <div className="section-title">Лидеры</div>
-          <Leaderboard leaderboard={state.leaderboard} players={state.players} characters={state.characters} />
+          <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
         </div>
       ) : null}
 
