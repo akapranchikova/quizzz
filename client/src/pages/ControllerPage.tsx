@@ -103,20 +103,18 @@ export default function ControllerPage() {
   const renderQuestion = () => {
     if (!currentQuestion) return null;
     return (
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title">Вопрос</div>
-        <p style={{ fontSize: 18, fontWeight: 700 }}>{currentQuestion.text}</p>
+      <div className="mobile-card" style={{ marginTop: 16 }}>
+        <p className="question-title">{currentQuestion.text}</p>
         {state?.phase === 'question' && freezeActive && (
           <div className="alert-warning" style={{ marginBottom: 8, padding: 10 }}>Заморозка активна</div>
         )}
-        <div className="answers-grid">
+        <div className="mobile-answer-grid">
           {orderedOptions.map((opt) => {
-            const disabled =
-              !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
+            const disabled = !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
             return (
               <button
                 key={opt.id}
-                className="option-button"
+                className="option-button mobile-option"
                 disabled={disabled}
                 onClick={() => onAnswer(opt.id)}
                 style={{
@@ -135,87 +133,97 @@ export default function ControllerPage() {
 
   const otherPlayers = useMemo(() => state?.players.filter((p) => p.id !== me?.id) || [], [state?.players, me]);
 
+  const statusMessage = () => {
+    if (state?.phase === 'category_pick') return 'Ожидайте: на экране выбирают категорию';
+    if (state?.phase === 'question') return 'Смотрите на варианты ниже и жмите быстрее!';
+    if (state?.phase === 'reveal') return 'Смотрите на экран: показываются ответы';
+    return 'Ждём остальных игроков и старт';
+  };
+
+  const isHost = state?.hostPlayerId === me?.id;
+  const everyoneReady = (state?.players || []).length > 0 && (state?.players || []).every((p) => p.ready);
+
   return (
-    <div className="app-shell">
-      <div className="card">
-        <div className="section-title">Пульт игрока</div>
-        <div className="flex-row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+    <div className="controller-shell">
+      <div className="mobile-card">
+        <div className="status-line">
           <div className="status-pill">
             <span>{connected ? 'Подключено' : 'Ожидание соединения'}</span>
             {state?.phase && <span className="badge">Стадия: {state.phase}</span>}
           </div>
           {me && <div className="badge">Очки: {me.score}</div>}
         </div>
+
         {!me && (
-          <div className="grid-two" style={{ marginTop: 12 }}>
-            <div>
-              <label className="label">Никнейм</label>
-              <input className="input" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Кот Учёный" />
-            </div>
-            <div>
-              <label className="label">Персонаж</label>
-              <select className="input" value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
-                {state?.characters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.ability ? `(${c.ability.name})` : ''}
+          <div className="stacked-inputs">
+            <input className="input" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Никнейм" />
+            <select className="input" value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
+              {state?.characters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.ability ? `(${c.ability.name})` : ''}
+                </option>
+              ))}
+            </select>
+            <button className="button-primary cta-button" onClick={joinGame} disabled={!nickname}>
+              Войти в игру
+            </button>
+          </div>
+        )}
+
+        {me && (
+          <div className="stacked-inputs">
+            <button className="button-primary cta-button" onClick={toggleReady} disabled={state?.phase !== 'lobby'}>
+              {me.ready ? 'Не готов' : 'Готов'}
+            </button>
+            {isHost && state?.phase === 'lobby' && (
+              <button className="button-primary cta-button" disabled={!everyoneReady} onClick={() => socket?.emit('player:startGame')}>
+                Начать игру (я первый)
+              </button>
+            )}
+            <div className="small-muted">{statusMessage()}</div>
+          </div>
+        )}
+
+        {ability && me && (
+          <div className="ability-card mobile-ability">
+            <div style={{ fontWeight: 700 }}>{ability.name}</div>
+            <div className="small-muted">{ability.description}</div>
+            <div className="small-muted">Осталось использований: {abilityUses}</div>
+            {(ability.id === 'shuffle_enemy' || ability.id === 'freeze_enemy') && (
+              <select className="input" value={targetPlayerId} onChange={(e) => setTargetPlayerId(e.target.value)} style={{ marginTop: 8 }}>
+                <option value="">Выберите цель</option>
+                {otherPlayers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nickname}
                   </option>
                 ))}
               </select>
-            </div>
-          </div>
-        )}
-        {!me && (
-          <button className="button-primary" style={{ marginTop: 12 }} onClick={joinGame} disabled={!nickname}>
-            Войти
-          </button>
-        )}
-        {me && (
-          <div style={{ marginTop: 12 }} className="flex-row">
-            <button className="button-primary" onClick={toggleReady} disabled={state?.phase !== 'lobby'}>
-              {me.ready ? 'Не готов' : 'Готов'}
-            </button>
-            {ability && (
-              <div className="ability-card">
-                <div style={{ fontWeight: 700 }}>{ability.name}</div>
-                <div className="small-muted">{ability.description}</div>
-                <div className="small-muted">Осталось использований: {abilityUses}</div>
-                {(ability.id === 'shuffle_enemy' || ability.id === 'freeze_enemy') && (
-                  <select
-                    className="input"
-                    value={targetPlayerId}
-                    onChange={(e) => setTargetPlayerId(e.target.value)}
-                    style={{ marginTop: 8 }}
-                  >
-                    <option value="">Выберите цель</option>
-                    {otherPlayers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nickname}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {ability.id === 'shield' ? (
-                  <div className="alert" style={{ marginTop: 8 }}>
-                    Пассивно: срабатывает при первой пакости.
-                  </div>
-                ) : (
-                  <button className="button-primary" style={{ marginTop: 8 }} onClick={useAbility} disabled={abilityUses <= 0}>
-                    Использовать способность
-                  </button>
-                )}
+            )}
+            {ability.id === 'shield' ? (
+              <div className="alert" style={{ marginTop: 8 }}>
+                Пассивно: срабатывает при первой пакости.
               </div>
+            ) : (
+              <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={useAbility} disabled={abilityUses <= 0 || state?.phase !== 'question'}>
+                Использовать способность
+              </button>
             )}
           </div>
         )}
+
         {info && <div className="alert" style={{ marginTop: 10 }}>{info}</div>}
       </div>
 
       {renderQuestion()}
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title">Игроки</div>
-        <PlayerList players={state?.players || []} characters={state?.characters || []} showReady={true} showScore={true} />
-      </div>
+      {state?.phase !== 'question' && (
+        <div className="mobile-card" style={{ marginTop: 16 }}>
+          <div className="small-muted">Смотрите на экран: {state?.phase === 'category_pick' ? 'идёт выбор категории' : 'ожидаем следующий вопрос'}</div>
+          {state?.players?.length ? (
+            <PlayerList players={state.players || []} characters={state.characters || []} showReady={true} showScore={true} />
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

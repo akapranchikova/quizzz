@@ -5,6 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs/promises';
 import chokidar from 'chokidar';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,6 +38,7 @@ const gameState = {
   categories: [],
   characters: [],
   players: new Map(),
+  hostPlayerId: null,
   usedQuestionIds: new Set(),
   currentQuestion: null,
   questionStartTime: null,
@@ -44,6 +46,23 @@ const gameState = {
   answerStats: {},
   leaderboard: [],
 };
+
+let revealTimer = null;
+
+function getLocalIp() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      const isV4 = net.family === 'IPv4' || net.family === 4;
+      if (isV4 && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return null;
+}
+
+const preferredHost = process.env.PUBLIC_HOST || getLocalIp();
 
 async function loadJsonFile(filePath, fallback = {}) {
   try {
@@ -69,6 +88,7 @@ async function loadData() {
 }
 
 function resetGame(keepPlayers = true) {
+  clearRevealTimer();
   gameState.phase = 'lobby';
   gameState.usedQuestionIds = new Set();
   gameState.currentQuestion = null;
@@ -87,6 +107,13 @@ function resetGame(keepPlayers = true) {
     }
   }
   broadcastState();
+}
+
+function clearRevealTimer() {
+  if (revealTimer) {
+    clearTimeout(revealTimer);
+    revealTimer = null;
+  }
 }
 
 function getAbilityUses(characterId) {
@@ -132,7 +159,20 @@ function broadcastState() {
   io.emit('server:state', buildStatePayload());
 }
 
+function beginGame() {
+  gameState.phase = 'category_pick';
+  gameState.usedQuestionIds = new Set();
+  gameState.leaderboard = [];
+  gameState.currentQuestion = null;
+  gameState.questionStartTime = null;
+  gameState.answers = {};
+  gameState.answerStats = {};
+  clearRevealTimer();
+  broadcastState();
+}
+
 function startQuestion(question) {
+  clearRevealTimer();
   if (!question) return;
   gameState.currentQuestion = question;
   gameState.phase = 'question';
@@ -143,6 +183,12 @@ function startQuestion(question) {
     player.frozenUntil = 0;
   }
   io.emit('server:question', sanitizeQuestion(question, 'question'));
+  const limitMs = (question.timeLimitSec || 15) * 1000;
+  revealTimer = setTimeout(() => {
+    if (gameState.phase === 'question') {
+      revealQuestion();
+    }
+  }, limitMs + 200);
   broadcastState();
 }
 
@@ -162,6 +208,8 @@ function buildStatePayload() {
       frozenUntil: p.frozenUntil,
       lastAnswer: gameState.answers[p.id] || null,
     })),
+    hostPlayerId: gameState.hostPlayerId,
+    preferredHost,
     currentQuestion: sanitizeQuestion(gameState.currentQuestion, gameState.phase),
     questionStartTime: gameState.questionStartTime,
     answerStats: gameState.answerStats,
@@ -172,6 +220,7 @@ function buildStatePayload() {
 }
 
 function revealQuestion() {
+  clearRevealTimer();
   if (!gameState.currentQuestion) return;
   const question = gameState.currentQuestion;
   for (const [playerId, answer] of Object.entries(gameState.answers)) {
@@ -277,6 +326,9 @@ io.on('connection', (socket) => {
       frozenUntil: 0,
     };
     gameState.players.set(socket.id, player);
+    if (!gameState.hostPlayerId) {
+      gameState.hostPlayerId = socket.id;
+    }
     broadcastState();
     callback?.({ ok: true, playerId: socket.id });
   });
@@ -309,11 +361,17 @@ io.on('connection', (socket) => {
     handleAbilityUse(player, payload || {});
   });
 
+  socket.on('player:startGame', () => {
+    if (gameState.phase !== 'lobby') return;
+    if (socket.id !== gameState.hostPlayerId) return;
+    const players = Array.from(gameState.players.values());
+    const everyoneReady = players.length > 0 && players.every((p) => p.ready);
+    if (!everyoneReady) return;
+    beginGame();
+  });
+
   socket.on('admin:startGame', () => {
-    gameState.phase = 'category_pick';
-    gameState.usedQuestionIds = new Set();
-    gameState.leaderboard = [];
-    broadcastState();
+    beginGame();
   });
 
   socket.on('admin:pickCategory', ({ categoryId }) => {
@@ -334,6 +392,7 @@ io.on('connection', (socket) => {
         gameState.questionStartTime = null;
         gameState.answers = {};
         gameState.answerStats = {};
+        clearRevealTimer();
         broadcastState();
       }
     }
@@ -349,6 +408,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     gameState.players.delete(socket.id);
+    if (gameState.hostPlayerId === socket.id) {
+      const next = gameState.players.values().next().value;
+      gameState.hostPlayerId = next ? next.id : null;
+    }
     broadcastState();
   });
 
