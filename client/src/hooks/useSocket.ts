@@ -3,8 +3,17 @@ import { io, Socket } from 'socket.io-client';
 import { GameState } from '../types';
 
 const defaultHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-const defaultPort = import.meta.env.VITE_SOCKET_PORT || '5174';
-const socketUrl = import.meta.env.VITE_SOCKET_URL || `${typeof window !== 'undefined' ? window.location.protocol : 'http:'}//${defaultHost}:${defaultPort}`;
+const portFromEnv = import.meta.env.VITE_SOCKET_PORT;
+const fallbackPort =
+  typeof window !== 'undefined'
+    ? import.meta.env.DEV
+      ? '5174'
+      : window.location.port || ''
+    : '5174';
+const defaultPort = portFromEnv ?? fallbackPort;
+const defaultProtocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
+const socketUrl =
+  import.meta.env.VITE_SOCKET_URL || `${defaultProtocol}//${defaultHost}${defaultPort ? `:${defaultPort}` : ''}`;
 const IDENTITY_KEY = 'quizzz:player_identity';
 type StoredIdentity = { playerId: string; resumeToken: string };
 
