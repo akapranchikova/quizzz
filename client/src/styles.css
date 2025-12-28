@@ -4,6 +4,23 @@
   background-color: #0b1221;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  height: 100svh;
+  min-height: 100svh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0a0b23;
+  overscroll-behavior: none;
+}
+
+#root {
+  display: flex;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -11,7 +28,7 @@
 body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
+  height: 100%;
   color: #e2e8f0;
   background: #0a0b23;
 }
@@ -39,30 +56,61 @@ button {
 }
 
 .controller-screen {
-  min-height: 100vh;
+  position: relative;
+  min-height: 100svh;
+  height: 100svh;
+  width: 100%;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  padding: 16px;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: radial-gradient(circle at 20% 20%, rgba(124, 58, 237, 0.35), transparent 35%),
+    radial-gradient(circle at 80% 0%, rgba(34, 211, 238, 0.25), transparent 32%),
+    linear-gradient(135deg, #080a1a, #0d1026 45%, #080a1a);
+  color: #e8edff;
+  overflow: hidden;
+  touch-action: manipulation;
 }
 
-.controller-card {
-  width: min(640px, 96vw);
-  background: linear-gradient(145deg, rgba(26, 35, 58, 0.92), rgba(17, 24, 39, 0.9));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 40px rgba(99, 102, 241, 0.25);
+.controller-stage {
+  flex: 1;
+  width: min(780px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+  padding: clamp(12px, 4vw, 28px);
+}
+
+.controller-stage--flow {
+  justify-content: flex-start;
+}
+
+.controller-stage--stack {
+  align-items: stretch;
 }
 
 .controller-centered {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
   align-items: center;
   justify-content: center;
-  min-height: 60vh;
-  text-align: center;
   gap: 16px;
+}
+
+.controller-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.controller-main-button {
+  width: min(360px, 100%);
 }
 
 .controller-title {
@@ -82,22 +130,24 @@ button {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 10px;
+  width: 100%;
 }
 
 .character-tile {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
   padding: 12px;
   color: #fff;
   text-align: center;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+  transition: border-color 0.15s ease, transform 0.1s ease, background 0.2s ease;
 }
 
 .character-tile.selected {
   border-color: #8b5cf6;
-  box-shadow: 0 0 25px rgba(139, 92, 246, 0.35);
+  box-shadow: none;
   transform: translateY(-1px);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(34, 211, 238, 0.2));
 }
 
 .character-icon {
@@ -117,22 +167,22 @@ button {
 
 .info-banner {
   margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
   text-align: center;
   font-size: 14px;
+  color: #cbd5f5;
 }
 
 .info-banner.subtle {
-  background: rgba(99, 102, 241, 0.16);
-  border-color: rgba(99, 102, 241, 0.3);
+  color: #9ca3af;
 }
 
 .start-wrapper {
   position: relative;
-  padding: 40px;
+  padding: 20px;
 }
 
 .start-ring {
@@ -145,8 +195,8 @@ button {
 }
 
 .start-ring-svg {
-  width: 320px;
-  height: 320px;
+  width: min(320px, 70vw);
+  height: min(320px, 70vw);
   filter: drop-shadow(0 0 16px rgba(139, 92, 246, 0.5));
 }
 
@@ -161,8 +211,8 @@ button {
 
 .start-button {
   position: relative;
-  width: 220px;
-  height: 220px;
+  width: min(220px, 52vw);
+  height: min(220px, 52vw);
   border-radius: 50%;
   border: none;
   color: #fff;
@@ -185,6 +235,7 @@ button {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
+  width: 100%;
 }
 
 .mobile-option {
@@ -359,17 +410,17 @@ button {
   width: 100%;
   padding: 16px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(99, 102, 241, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(34, 211, 238, 0.3));
   color: #fff;
   font-weight: 700;
   font-size: 18px;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition: transform 0.1s ease, border-color 0.1s ease, background 0.2s ease;
 }
 
 .option-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.35);
+  border-color: rgba(255, 255, 255, 0.32);
 }
 
 .option-button:disabled {
@@ -384,32 +435,40 @@ button {
 }
 
 .ability-card {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
 }
 
 .alert {
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
   color: #bbf7d0;
+  font-weight: 700;
 }
 
 .alert-warning {
-  background: rgba(234, 179, 8, 0.12);
-  border-color: rgba(234, 179, 8, 0.4);
-  color: #fde68a;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  color: #facc15;
+  font-weight: 700;
 }
 
 .mobile-card {
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  padding: 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 .question-title {
@@ -439,7 +498,8 @@ button {
 
 .option-selected {
   border-color: #22d3ee;
-  box-shadow: 0 0 16px rgba(34, 211, 238, 0.35);
+  box-shadow: none;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.35), rgba(99, 102, 241, 0.35));
 }
 
 @keyframes start-pulse {
@@ -463,9 +523,9 @@ button {
   }
 }
 
-    .screen-root {
+.screen-root {
   position: relative;
-  min-height: 100vh;
+  min-height: 100svh;
   overflow: hidden;
   color: #e3e7ff;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
