@@ -45,6 +45,7 @@ const gameState = {
   answers: {},
   answerStats: {},
   leaderboard: [],
+  categoryVotes: {},
 };
 
 let revealTimer = null;
@@ -96,6 +97,7 @@ function resetGame(keepPlayers = true) {
   gameState.answers = {};
   gameState.answerStats = {};
   gameState.leaderboard = [];
+  gameState.categoryVotes = {};
   if (!keepPlayers) {
     gameState.players.clear();
   } else {
@@ -146,6 +148,41 @@ function computeLeaderboard() {
   gameState.leaderboard = leaderboard;
 }
 
+function computeCategoryVoteStats() {
+  const stats = {};
+  for (const categoryId of Object.values(gameState.categoryVotes || {})) {
+    if (!categoryId) continue;
+    stats[categoryId] = (stats[categoryId] || 0) + 1;
+  }
+  return stats;
+}
+
+function chooseCategoryFromVotes() {
+  const stats = computeCategoryVoteStats();
+  const entries = Object.entries(stats);
+  if (!entries.length) return null;
+  const maxVotes = Math.max(...entries.map(([, count]) => count));
+  const contenders = entries.filter(([, count]) => count === maxVotes).map(([id]) => id);
+  return contenders[Math.floor(Math.random() * contenders.length)];
+}
+
+function haveAllPlayersVoted() {
+  const players = Array.from(gameState.players.keys());
+  return players.length > 0 && players.every((id) => Boolean(gameState.categoryVotes?.[id]));
+}
+
+function startRoundFromVotes(requireAllVotes = false) {
+  if (gameState.phase !== 'category_pick') return false;
+  if (requireAllVotes && !haveAllPlayersVoted()) return false;
+  const categoryId = chooseCategoryFromVotes();
+  if (!categoryId) return false;
+  const question = selectQuestion(categoryId);
+  if (!question) return false;
+  gameState.usedQuestionIds.add(question.id);
+  startQuestion(question);
+  return true;
+}
+
 function selectQuestion(categoryId) {
   const pool = gameState.questions.filter((q) => q.categoryId === categoryId && !gameState.usedQuestionIds.has(q.id));
   if (!pool.length) {
@@ -167,6 +204,7 @@ function beginGame() {
   gameState.questionStartTime = null;
   gameState.answers = {};
   gameState.answerStats = {};
+  gameState.categoryVotes = {};
   clearRevealTimer();
   broadcastState();
 }
@@ -179,6 +217,7 @@ function startQuestion(question) {
   gameState.questionStartTime = Date.now();
   gameState.answers = {};
   gameState.answerStats = {};
+  gameState.categoryVotes = {};
   for (const player of gameState.players.values()) {
     player.frozenUntil = 0;
   }
@@ -216,6 +255,8 @@ function buildStatePayload() {
     leaderboard: gameState.leaderboard,
     usedQuestionCount: gameState.usedQuestionIds.size,
     totalQuestions: (gameState.questions || []).length,
+    categoryVotes: gameState.categoryVotes,
+    categoryVoteStats: computeCategoryVoteStats(),
   };
 }
 
@@ -333,6 +374,16 @@ io.on('connection', (socket) => {
     callback?.({ ok: true, playerId: socket.id });
   });
 
+  socket.on('player:voteCategory', ({ categoryId }) => {
+    if (gameState.phase !== 'category_pick') return;
+    if (!gameState.categories.find((c) => c.id === categoryId)) return;
+    const player = gameState.players.get(socket.id);
+    if (!player) return;
+    gameState.categoryVotes[player.id] = categoryId;
+    broadcastState();
+    startRoundFromVotes(true);
+  });
+
   socket.on('player:ready', (isReady) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
@@ -392,7 +443,12 @@ io.on('connection', (socket) => {
         gameState.questionStartTime = null;
         gameState.answers = {};
         gameState.answerStats = {};
+        gameState.categoryVotes = {};
         clearRevealTimer();
+        broadcastState();
+      }
+    } else if (gameState.phase === 'category_pick') {
+      if (!startRoundFromVotes(false)) {
         broadcastState();
       }
     }
@@ -408,6 +464,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     gameState.players.delete(socket.id);
+    delete gameState.categoryVotes[socket.id];
     if (gameState.hostPlayerId === socket.id) {
       const next = gameState.players.values().next().value;
       gameState.hostPlayerId = next ? next.id : null;

@@ -42,7 +42,7 @@ export default function AdminPage() {
 
       <div className="card" style={{ marginTop: 14 }}>
         <div className="section-title">Категории</div>
-        <div className="flex-row">
+        <div className="flex-row" style={{ flexWrap: 'wrap', gap: 8 }}>
           {state?.categories.map((cat) => (
             <button
               key={cat.id}
@@ -50,9 +50,13 @@ export default function AdminPage() {
               disabled={state?.phase !== 'category_pick'}
               onClick={() => pickCategory(cat.id)}
             >
-              {cat.icon || '📚'} {cat.title}
+              {cat.icon || '📚'} {cat.title} ({state?.categoryVoteStats?.[cat.id] || 0})
             </button>
           ))}
+        </div>
+        <div className="small-muted" style={{ marginTop: 6 }}>
+          Игроки голосуют за категорию. Если все проголосовали — выбор произойдет автоматически, при равенстве голосов — случайно. Кнопка
+          «{nextLabel}» выберет категорию на основе текущих голосов.
         </div>
       </div>
 

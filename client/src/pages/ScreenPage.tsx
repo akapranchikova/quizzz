@@ -58,11 +58,14 @@ export default function ScreenPage() {
               <div key={cat.id} className="badge">
                 <span>{cat.icon || '📚'}</span>
                 <strong>{cat.title}</strong>
+                <span className="small-muted" style={{ marginLeft: 6 }}>
+                  Голоса: {state.categoryVoteStats?.[cat.id] || 0}
+                </span>
               </div>
             ))}
           </div>
           <div className="small-muted" style={{ marginTop: 8 }}>
-            Нажмите нужную категорию на панели администратора.
+            Игроки голосуют за категорию. Побеждает большинство, при равенстве — случайный выбор. Можно ускорить выбор кнопкой на панели администратора.
           </div>
         </div>
       )}

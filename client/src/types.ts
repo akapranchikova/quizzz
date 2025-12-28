@@ -68,4 +68,6 @@ export interface GameState {
   leaderboard: { id: string; nickname: string; score: number; characterId?: string }[];
   usedQuestionCount: number;
   totalQuestions: number;
+  categoryVotes?: Record<string, string | undefined>;
+  categoryVoteStats?: Record<string, number>;
 }

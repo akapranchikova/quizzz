@@ -20,6 +20,7 @@ export default function ControllerPage() {
   const [optionOrder, setOptionOrder] = useState<string[] | null>(null);
   const [freezeUntil, setFreezeUntil] = useState(0);
   const [info, setInfo] = useState('');
+  const [pendingCategoryId, setPendingCategoryId] = useState('');
 
   const me = state?.players.find((p) => p.id === socket?.id);
   const myCharacter = state?.characters.find((c) => c.id === (me?.characterId || characterId));
@@ -61,6 +62,7 @@ export default function ControllerPage() {
     setOptionOrder(null);
     setFreezeUntil(0);
     setInfo('');
+    setPendingCategoryId('');
   }, [state?.currentQuestion?.id, state?.phase]);
 
   useEffect(() => {
@@ -68,6 +70,11 @@ export default function ControllerPage() {
     const first = state.characters[0];
     setCharacterId((prev) => prev || first.id);
   }, [state?.characters]);
+
+  useEffect(() => {
+    if (!state?.categories.length) return;
+    setPendingCategoryId((prev) => prev || state.categories[0].id);
+  }, [state?.categories]);
 
   const joinGame = () => {
     if (!socket || !nickname) return;
@@ -132,12 +139,20 @@ export default function ControllerPage() {
   };
 
   const otherPlayers = useMemo(() => state?.players.filter((p) => p.id !== me?.id) || [], [state?.players, me]);
+  const myVote = me?.id ? state?.categoryVotes?.[me.id] : undefined;
+  const voteStats = state?.categoryVoteStats || {};
 
   const statusMessage = () => {
-    if (state?.phase === 'category_pick') return 'Ожидайте: на экране выбирают категорию';
+    if (state?.phase === 'category_pick') return 'Выбираем категорию голосованием ниже';
     if (state?.phase === 'question') return 'Смотрите на варианты ниже и жмите быстрее!';
     if (state?.phase === 'reveal') return 'Смотрите на экран: показываются ответы';
     return 'Ждём остальных игроков и старт';
+  };
+
+  const voteForCategory = (categoryId: string) => {
+    if (!me || !socket || state?.phase !== 'category_pick') return;
+    setPendingCategoryId(categoryId);
+    socket.emit('player:voteCategory', { categoryId });
   };
 
   const isHost = state?.hostPlayerId === me?.id;
@@ -181,6 +196,39 @@ export default function ControllerPage() {
               </button>
             )}
             <div className="small-muted">{statusMessage()}</div>
+          </div>
+        )}
+
+        {me && state?.phase === 'category_pick' && (
+          <div className="mobile-card" style={{ marginTop: 12 }}>
+            <div className="section-title" style={{ marginBottom: 8 }}>
+              Голосуйте за категорию
+            </div>
+            <div className="mobile-answer-grid">
+              {state.categories.map((cat) => {
+                const votes = voteStats[cat.id] || 0;
+                const isMine = myVote === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    className="option-button mobile-option"
+                    onClick={() => voteForCategory(cat.id)}
+                    disabled={state.phase !== 'category_pick'}
+                    style={{
+                      borderColor: isMine ? '#22d3ee' : undefined,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700 }}>
+                      {cat.icon || '📚'} {cat.title}
+                    </div>
+                    <div className="small-muted">Голоса: {votes}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="small-muted" style={{ marginTop: 8 }}>
+              Категория выбирается по большинству голосов игроков. При равенстве — случайно.
+            </div>
           </div>
         )}
 
