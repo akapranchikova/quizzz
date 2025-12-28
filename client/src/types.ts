@@ -111,4 +111,6 @@ export interface GameState {
   activeMiniGame?: { id: string; title: string; description?: string; scoring?: string } | null;
   miniGamesRemaining?: { id: string; title: string }[];
   miniGamesPlayed?: string[];
+  controllerUrl?: string | null;
+  maxPlayers?: number;
 }
