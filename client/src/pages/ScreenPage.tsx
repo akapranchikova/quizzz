@@ -22,6 +22,138 @@ export default function ScreenPage() {
           })
           .sort((a, b) => Number(b.isCorrect) - Number(a.isCorrect))
       : [];
+  const phaseTimer =
+    state?.phaseEndsAt && state?.phaseStartedAt ? (
+      <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Таймер стадии" />
+    ) : null;
+
+  const renderPhaseContent = () => {
+    switch (state?.phase) {
+      case 'lobby':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Подключение игроков</div>
+            <PlayerList players={players} characters={state?.characters || []} showReady={true} showScore={false} />
+          </div>
+        );
+      case 'ready':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Нажмите «Готов» на своих устройствах</div>
+            <PlayerList players={players} characters={state?.characters || []} showReady={true} showScore={false} />
+          </div>
+        );
+      case 'game_start_confirm':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Все готовы!</div>
+            <div className="badge">Любой игрок может начать игру</div>
+            <PlayerList players={players} characters={state?.characters || []} showReady={true} showScore={false} />
+          </div>
+        );
+      case 'category_select':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Выберите категорию</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Голосование" />
+            <div className="flex-row" style={{ gap: 12, marginTop: 10 }}>
+              {(state.categoryOptions || state.categories).slice(0, 4).map((cat) => (
+                <div key={cat.id} className="badge">
+                  <span>{cat.icon || '📚'}</span>
+                  <strong>{cat.title}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="small-muted" style={{ marginTop: 8 }}>
+              Как только все игроки проголосуют — идём дальше.
+            </div>
+          </div>
+        );
+      case 'category_reveal':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Категория выбрана</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Результаты голосования" />
+            <div className="flex-row" style={{ gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+              {(state.categoryOptions?.length ? state.categoryOptions : state.categories).map((cat) => {
+                const votes = state.categoryVoteStats?.[cat.id] || 0;
+                const highlight = cat.id === state.activeCategoryId;
+                return (
+                  <div key={cat.id} className="badge" style={{ borderColor: highlight ? '#22c55e' : undefined }}>
+                    <span>{cat.icon || '📚'}</span>
+                    <strong>{cat.title}</strong>
+                    <span className="small-muted" style={{ marginLeft: 6 }}>
+                      Голоса: {votes}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="small-muted" style={{ marginTop: 8 }}>
+              Победила категория {state.categories.find((c) => c.id === state.activeCategoryId)?.title || '—'}.
+            </div>
+          </div>
+        );
+      case 'pre_question':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Подготовка перед вопросом</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Окно бафов и пакостей" />
+            <div className="small-muted" style={{ marginTop: 6 }}>
+              Все способности и события применяются только сейчас.
+            </div>
+            <div className="flex-row" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              {players.map((p) => (
+                <div key={p.id} className="badge" style={{ borderColor: state.preQuestionReady?.[p.id] ? '#22c55e' : undefined }}>
+                  <span>{p.nickname}</span>
+                  {state.preQuestionReady?.[p.id] && <span className="small-muted">готов</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case 'question':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            {state.currentQuestion && <QuestionPrompt question={state.currentQuestion} questionStartTime={state.questionStartTime} />}
+          </div>
+        );
+      case 'answer_reveal':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Результаты вопроса</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Показ результатов" />
+            {state.currentQuestion && <QuestionResults question={state.currentQuestion} answerStats={state.answerStats || {}} />}
+            {state.currentQuestion?.explanation && <div className="alert" style={{ marginTop: 12 }}>{state.currentQuestion.explanation}</div>}
+          </div>
+        );
+      case 'score':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Очки за раунд</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Анимация очков" />
+            <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
+          </div>
+        );
+      case 'next_round_confirm':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Готовы продолжить?</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Ожидание подтверждения" />
+            <div className="badge" style={{ marginTop: 8 }}>Любой игрок может начать следующий раунд</div>
+          </div>
+        );
+      case 'game_end':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Игра завершена</div>
+            <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -52,122 +184,21 @@ export default function ScreenPage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div className="section-title">Игроки</div>
-        <PlayerList players={players} characters={state?.characters || []} showReady={true} showScore={true} />
-      </div>
-
-      <div className="card" style={{ marginTop: 14 }}>
-        <div className="section-title">Системный диктор</div>
-        <div className="badge">{state?.narration || '...'}</div>
-        {state?.activeEvent && (
-          <div className="alert" style={{ marginTop: 8 }}>
-            {state.activeEvent.kind === 'malus' ? 'Пакость' : 'Баф'}: {state.activeEvent.title}
-            {state.activeEvent.targetPlayerId && (
-              <span style={{ marginLeft: 6 }}>
-                → цель: {players.find((p) => p.id === state.activeEvent?.targetPlayerId)?.nickname || 'случайный игрок'}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {state?.phase === 'ready_check' && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Проверка готовности</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Старт игры" />
-          <div className="small-muted">Как только все подтвердили готовность — игра сама стартует.</div>
-        </div>
-      )}
-
-      {state?.phase === 'round_intro' && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Раунд {state.roundNumber}</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Старт выбора" />
-          <div className="small-muted">Скоро появятся новые категории для голосования.</div>
-        </div>
-      )}
-
-      {state?.phase === 'category_select' && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Выбор категории</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Выбор категории" />
-          <div className="flex-row" style={{ gap: 8 }}>
-            {(state.categoryOptions || state.categories).slice(0, 4).map((cat) => (
-              <div key={cat.id} className="badge">
-                <span>{cat.icon || '📚'}</span>
-                <strong>{cat.title}</strong>
-              </div>
-            ))}
-          </div>
-          <div className="small-muted" style={{ marginTop: 8 }}>
-            Игроки голосуют на своих контроллерах. Результаты появятся после окончания таймера.
-          </div>
-        </div>
-      )}
-
-      {state?.phase === 'category_reveal' && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Категория выбрана</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Показ результата" />
-          <div className="flex-row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            {(state.categoryOptions?.length ? state.categoryOptions : state.categories).map((cat) => {
-              const votes = state.categoryVoteStats?.[cat.id] || 0;
-              const highlight = cat.id === state.activeCategoryId;
-              return (
-                <div key={cat.id} className="badge" style={{ borderColor: highlight ? '#22c55e' : undefined }}>
-                  <span>{cat.icon || '📚'}</span>
-                  <strong>{cat.title}</strong>
-                  <span className="small-muted" style={{ marginLeft: 6 }}>
-                    Голоса: {votes}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="small-muted" style={{ marginTop: 8 }}>
-            Победила категория {state.categories.find((c) => c.id === state.activeCategoryId)?.title || '—'}.
-          </div>
-        </div>
-      )}
-
-      {state?.phase === 'random_event' && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Случайное событие</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Эффект на раунд" />
-          {state.activeEvent ? (
-            <div className="alert" style={{ marginTop: 8 }}>
-              {state.activeEvent.kind === 'malus' ? 'Пакость' : 'Баф'}: {state.activeEvent.title}
-              {state.activeEvent.description && <div className="small-muted">{state.activeEvent.description}</div>}
-            </div>
-          ) : (
-            <div className="small-muted">На этот раз без событий.</div>
+      <div className="badge" style={{ marginTop: 10 }}>{state?.narration || '...'}</div>
+      {phaseTimer}
+      {state?.activeEvent && (
+        <div className="alert" style={{ marginTop: 8 }}>
+          {state.activeEvent.kind === 'malus' ? 'Пакость' : 'Баф'}: {state.activeEvent.title}
+          {state.activeEvent.targetPlayerId && (
+            <span style={{ marginLeft: 6 }}>
+              → цель: {players.find((p) => p.id === state.activeEvent?.targetPlayerId)?.nickname || 'случайный игрок'}
+            </span>
           )}
         </div>
       )}
+    </div>
 
-      {state?.phase === 'ability' && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Подготовка к вопросу</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Окно способностей" />
-          <div className="small-muted">Выберите, будете ли применять способности. Вопрос появится после таймера.</div>
-        </div>
-      )}
-
-      {state?.phase === 'question' && state.currentQuestion && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <QuestionPrompt question={state.currentQuestion} questionStartTime={state.questionStartTime} />
-        </div>
-      )}
-
-      {state?.phase === 'answer_reveal' && state.currentQuestion && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Результаты вопроса</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Показ результатов" />
-          <QuestionResults question={state.currentQuestion} answerStats={state.answerStats || {}} />
-          {state.currentQuestion.explanation && <div className="alert" style={{ marginTop: 12 }}>{state.currentQuestion.explanation}</div>}
-        </div>
-      )}
+      {renderPhaseContent()}
 
       {(state?.phase === 'answer_reveal' || state?.phase === 'score') && answeredPlayers.length > 0 && (
         <div className="card" style={{ marginTop: 14 }}>
@@ -188,15 +219,7 @@ export default function ScreenPage() {
         </div>
       )}
 
-      {state?.phase === 'intermission' && (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="section-title">Интермиссия</div>
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="До следующего раунда" />
-          <div className="small-muted">Следующий выбор категории начнется автоматически.</div>
-        </div>
-      )}
-
-      {state?.leaderboard?.length ? (
+      {state?.leaderboard?.length && state?.phase !== 'score' && state?.phase !== 'game_end' ? (
         <div className="card" style={{ marginTop: 14 }}>
           <div className="section-title">Лидеры</div>
           <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />

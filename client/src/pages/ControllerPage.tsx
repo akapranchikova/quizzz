@@ -22,15 +22,15 @@ export default function ControllerPage() {
   const [eventLock, setEventLock] = useState<{ type: string; cleared?: boolean } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [info, setInfo] = useState('');
-  const [pendingCategoryId, setPendingCategoryId] = useState('');
   const [joinError, setJoinError] = useState('');
 
   const me = state?.players.find((p) => p.id === socket?.id);
   const myCharacter = state?.characters.find((c) => c.id === (me?.characterId || characterId));
   const ability: Ability | undefined = myCharacter?.ability;
   const abilityUses = me?.abilityUses?.[ability?.id || ''] ?? ability?.usesPerGame ?? 0;
-  const canUseAbility = abilityUses > 0 && (state?.phase === 'question' || state?.phase === 'ability');
+  const canUseAbility = abilityUses > 0 && state?.phase === 'pre_question';
   const hasAnswered = Boolean(me?.lastAnswer);
+  const preparedForQuestion = me ? Boolean(state?.preQuestionReady?.[me.id] || me.preparedForQuestion) : false;
 
   useEffect(() => {
     if (!socket) return;
@@ -110,11 +110,6 @@ export default function ControllerPage() {
     setCharacterId((prev) => prev || first.id);
   }, [state?.characters]);
 
-  useEffect(() => {
-    if (!state?.categories.length) return;
-    setPendingCategoryId((prev) => prev || state.categories[0].id);
-  }, [state?.categories]);
-
   const joinGame = () => {
     if (!socket || !nickname) return;
     setJoinError('');
@@ -129,6 +124,16 @@ export default function ControllerPage() {
     socket?.emit('player:ready', !me?.ready);
   };
 
+  const startGame = () => {
+    if (state?.phase !== 'game_start_confirm') return;
+    socket?.emit('player:startGame');
+  };
+
+  const continueNextRound = () => {
+    if (state?.phase !== 'next_round_confirm') return;
+    socket?.emit('player:continueNextRound');
+  };
+
   const currentQuestion = state?.currentQuestion;
   const orderedOptions = currentQuestion ? reorderOptions(currentQuestion.options, optionOrder) : [];
   const freezeActive = freezeUntil > Date.now();
@@ -141,15 +146,28 @@ export default function ControllerPage() {
     socket?.emit('player:answer', { optionId });
   };
 
+  const confirmPreQuestion = () => {
+    if (!socket || state?.phase !== 'pre_question') return;
+    socket.emit('player:confirmPreQuestion');
+  };
+
   const useAbility = () => {
-    if (!ability || abilityUses <= 0 || (state?.phase !== 'question' && state?.phase !== 'ability')) return;
+    if (!ability || abilityUses <= 0 || state?.phase !== 'pre_question') return false;
     if (ability.id === 'shuffle_enemy' || ability.id === 'freeze_enemy') {
       if (!targetPlayerId) {
         setInfo('Выберите цель для способности.');
-        return;
+        return false;
       }
     }
     socket?.emit('player:useAbility', { abilityId: ability.id, targetPlayerId });
+    return true;
+  };
+
+  const applyAbilityAndConfirm = () => {
+    const applied = useAbility();
+    if (applied) {
+      confirmPreQuestion();
+    }
   };
 
   const renderQuestion = () => {
@@ -201,26 +219,24 @@ export default function ControllerPage() {
 
   const statusMessage = () => {
     switch (state?.phase) {
-      case 'ready_check':
-        return 'Подтвердите готовность — стартуем автоматически.';
-      case 'round_intro':
-        return 'Новый раунд вот-вот начнётся.';
+      case 'ready':
+        return 'Нажмите «Готов», как только будете на связи.';
+      case 'game_start_confirm':
+        return 'Все подтвердили. Любой игрок может начать игру.';
       case 'category_select':
-        return 'Выбираем категорию. Итоги появятся после таймера.';
+        return 'Выбираем категорию. Итоги сразу после голосов.';
       case 'category_reveal':
         return 'Категория выбрана. Готовимся.';
-      case 'random_event':
-        return 'Случайное событие — смотрите на экран.';
-      case 'ability':
-        return 'Решите, будете ли использовать способность.';
+      case 'pre_question':
+        return 'Бафы и пакости только сейчас — решайте.';
       case 'question':
         return 'Отвечайте быстрее на вопрос!';
       case 'answer_reveal':
         return 'Смотрите результаты на экране.';
       case 'score':
         return 'Очки начисляются...';
-      case 'intermission':
-        return 'Ожидаем следующий раунд.';
+      case 'next_round_confirm':
+        return 'Любой игрок может начать следующий раунд.';
       default:
         return 'Ждём остальных игроков и старт';
     }
@@ -228,7 +244,6 @@ export default function ControllerPage() {
 
   const voteForCategory = (categoryId: string) => {
     if (!me || !socket || state?.phase !== 'category_select') return;
-    setPendingCategoryId(categoryId);
     socket.emit('player:voteCategory', { categoryId });
   };
 
@@ -279,11 +294,20 @@ export default function ControllerPage() {
             <button
               className="button-primary cta-button"
               onClick={toggleReady}
-              disabled={!(state?.phase === 'lobby' || state?.phase === 'ready_check' || state?.phase === 'game_end')}
+              disabled={!(state?.phase === 'lobby' || state?.phase === 'ready' || state?.phase === 'game_end')}
             >
               {me.ready ? 'Не готов' : 'Готов'}
             </button>
             <div className="small-muted">{statusMessage()}</div>
+          </div>
+        )}
+
+        {me && state?.phase === 'game_start_confirm' && (
+          <div className="stacked-inputs">
+            <button className="button-primary cta-button" onClick={startGame}>
+              Начать игру
+            </button>
+            <div className="small-muted">Любой игрок может нажать.</div>
           </div>
         )}
 
@@ -320,12 +344,12 @@ export default function ControllerPage() {
           </div>
         )}
 
-        {ability && me && (
+        {me && state?.phase === 'pre_question' && (
           <div className="ability-card mobile-ability">
-            <div style={{ fontWeight: 700 }}>{ability.name}</div>
-            <div className="small-muted">{ability.description}</div>
-            <div className="small-muted">Осталось использований: {abilityUses}</div>
-            {(ability.id === 'shuffle_enemy' || ability.id === 'freeze_enemy') && (
+            <div style={{ fontWeight: 700 }}>{ability ? ability.name : 'Подготовка к вопросу'}</div>
+            <div className="small-muted">{ability ? ability.description : 'Бафы и пакости применяются только сейчас.'}</div>
+            {ability && <div className="small-muted">Осталось использований: {abilityUses}</div>}
+            {(ability?.id === 'shuffle_enemy' || ability?.id === 'freeze_enemy') && (
               <select className="input" value={targetPlayerId} onChange={(e) => setTargetPlayerId(e.target.value)} style={{ marginTop: 8 }}>
                 <option value="">Выберите цель</option>
                 {otherPlayers.map((p) => (
@@ -335,15 +359,30 @@ export default function ControllerPage() {
                 ))}
               </select>
             )}
-            {ability.id === 'shield' ? (
+            {ability?.id === 'shield' && (
               <div className="alert" style={{ marginTop: 8 }}>
                 Пассивно: срабатывает при первой пакости.
               </div>
-            ) : (
-              <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={useAbility} disabled={!canUseAbility}>
-                Использовать способность
-              </button>
             )}
+            <div className="stacked-inputs" style={{ marginTop: 10 }}>
+              {ability && ability.id !== 'shield' && (
+                <button className="button-primary cta-button" onClick={applyAbilityAndConfirm} disabled={!canUseAbility || preparedForQuestion}>
+                  Применить
+                </button>
+              )}
+              <button className="button-primary cta-button" onClick={confirmPreQuestion} disabled={preparedForQuestion}>
+                {preparedForQuestion ? 'Готово' : 'Пропустить'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {me && state?.phase === 'next_round_confirm' && (
+          <div className="stacked-inputs" style={{ marginTop: 12 }}>
+            <button className="button-primary cta-button" onClick={continueNextRound}>
+              Продолжить
+            </button>
+            <div className="small-muted">Любой игрок может начать следующий раунд.</div>
           </div>
         )}
 
@@ -360,10 +399,18 @@ export default function ControllerPage() {
 
       {renderQuestion()}
 
-      {state?.phase !== 'question' && (
+      {state?.phase && state.phase !== 'question' && state.phase !== 'game_end' && (
         <div className="mobile-card" style={{ marginTop: 16 }}>
           <div className="small-muted">
-            Смотрите на экран: {state?.phase === 'category_select' ? 'идёт выбор категории' : 'ожидаем следующий вопрос'}
+            {state?.phase === 'category_select'
+              ? 'Идёт выбор категории'
+              : state?.phase === 'game_start_confirm'
+                ? 'Ждём, кто нажмёт «Начать»'
+                : state?.phase === 'pre_question'
+                  ? 'Окно способностей перед вопросом'
+                  : state?.phase === 'next_round_confirm'
+                    ? 'Подтвердите продолжение раунда'
+                    : 'Смотрите на экран: скоро следующий вопрос'}
           </div>
         </div>
       )}

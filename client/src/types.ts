@@ -1,15 +1,14 @@
 export type GamePhase =
   | 'lobby'
-  | 'ready_check'
-  | 'round_intro'
+  | 'ready'
+  | 'game_start_confirm'
   | 'category_select'
   | 'category_reveal'
-  | 'random_event'
-  | 'ability'
+  | 'pre_question'
   | 'question'
   | 'answer_reveal'
   | 'score'
-  | 'intermission'
+  | 'next_round_confirm'
   | 'game_end';
 
 export interface Category {
@@ -66,6 +65,7 @@ export interface PlayerState {
   frozenUntil?: number;
   eventLock?: { type: string; cleared?: boolean } | null;
   statusEffects?: { doublePoints?: boolean; eventShield?: boolean };
+  preparedForQuestion?: boolean;
   lastAnswer?: AnswerRecord | null;
 }
 
@@ -102,5 +102,6 @@ export interface GameState {
   randomEventChance?: number;
   allCorrectBonusActive?: boolean;
   categoryVotes?: Record<string, string | undefined>;
+  preQuestionReady?: Record<string, boolean>;
   categoryVoteStats?: Record<string, number>;
 }
