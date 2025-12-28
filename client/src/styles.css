@@ -38,6 +38,165 @@ button {
   margin: 0 auto;
 }
 
+.controller-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.controller-card {
+  width: min(640px, 96vw);
+  background: linear-gradient(145deg, rgba(26, 35, 58, 0.92), rgba(17, 24, 39, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 40px rgba(99, 102, 241, 0.25);
+}
+
+.controller-centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+  gap: 16px;
+}
+
+.controller-title {
+  font-size: 26px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.primary-action {
+  font-size: 22px;
+  padding: 16px 18px;
+  border-radius: 16px;
+}
+
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.character-tile {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+  padding: 12px;
+  color: #fff;
+  text-align: center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.character-tile.selected {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 25px rgba(139, 92, 246, 0.35);
+  transform: translateY(-1px);
+}
+
+.character-icon {
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+
+.character-name {
+  font-weight: 700;
+}
+
+.wait-text {
+  font-size: 24px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.info-banner {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+  font-size: 14px;
+}
+
+.info-banner.subtle {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.start-wrapper {
+  position: relative;
+  padding: 40px;
+}
+
+.start-ring {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.start-ring-svg {
+  width: 320px;
+  height: 320px;
+  filter: drop-shadow(0 0 16px rgba(139, 92, 246, 0.5));
+}
+
+.start-ring-svg circle {
+  fill: none;
+  stroke: rgba(99, 102, 241, 0.35);
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-dasharray: 560;
+  animation: ring-spin 6s linear infinite;
+}
+
+.start-button {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: none;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 800;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.25), transparent 55%),
+    linear-gradient(145deg, #7c3aed, #22d3ee);
+  box-shadow: 0 0 40px rgba(34, 211, 238, 0.35), 0 12px 40px rgba(124, 58, 237, 0.35);
+  backdrop-filter: blur(8px);
+  transition: transform 0.12s ease, box-shadow 0.2s ease;
+  animation: start-pulse 2.4s ease-in-out infinite;
+}
+
+.start-button:active {
+  transform: scale(0.97);
+  box-shadow: 0 0 30px rgba(34, 211, 238, 0.25);
+}
+
+.mobile-answer-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.mobile-option {
+  font-size: 20px;
+  padding: 18px 16px;
+}
+
+.cta-button {
+  width: 100%;
+  justify-content: center;
+}
+
 .card {
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -246,22 +405,6 @@ button {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
-.mobile-answer-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-.mobile-option {
-  font-size: 20px;
-  padding: 18px 16px;
-}
-
-.cta-button {
-  width: 100%;
-  justify-content: center;
-}
-
 .question-title {
   font-size: 22px;
   margin: 0 0 12px;
@@ -287,7 +430,33 @@ button {
   margin-top: 12px;
 }
 
-.screen-root {
+.option-selected {
+  border-color: #22d3ee;
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.35);
+}
+
+@keyframes start-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 40px rgba(34, 211, 238, 0.35), 0 12px 40px rgba(124, 58, 237, 0.35);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 55px rgba(34, 211, 238, 0.45), 0 16px 50px rgba(124, 58, 237, 0.45);
+  }
+}
+
+@keyframes ring-spin {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -560;
+  }
+}
+
+    .screen-root {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
