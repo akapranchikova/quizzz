@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { GameState } from '../types';
 
@@ -35,8 +35,15 @@ export function useSocket() {
   const [state, setState] = useState<GameState | null>(null);
   const [connected, setConnected] = useState(false);
   const [identity, setIdentity] = useState<ReturnType<typeof readStoredIdentity>>(readStoredIdentity);
+  const socketRef = useRef<Socket | null>(null);
+  const identityRef = useRef(identity);
+
+  useEffect(() => {
+    identityRef.current = identity;
+  }, [identity]);
 
   const persistIdentity = useCallback((payload: { playerId: string; resumeToken: string } | null) => {
+    identityRef.current = payload;
     setIdentity(payload);
     if (typeof window === 'undefined') return;
     if (!payload) {
@@ -47,13 +54,15 @@ export function useSocket() {
   }, []);
 
   const attemptResume = useCallback(() => {
-    if (!socket || !identity) return;
-    socket.emit('player:resume', identity, (res?: { ok?: boolean }) => {
+    const activeSocket = socketRef.current;
+    const currentIdentity = identityRef.current;
+    if (!activeSocket || !currentIdentity) return;
+    activeSocket.emit('player:resume', currentIdentity, (res?: { ok?: boolean }) => {
       if (!res?.ok) {
         persistIdentity(null);
       }
     });
-  }, [identity, persistIdentity, socket]);
+  }, [persistIdentity]);
 
   useEffect(() => {
     const s = io(socketUrl, {
@@ -63,6 +72,7 @@ export function useSocket() {
       reconnectionDelay: 800,
       reconnectionDelayMax: 1500,
     });
+    socketRef.current = s;
     setSocket(s);
 
     s.on('connect', () => {
@@ -74,15 +84,17 @@ export function useSocket() {
     s.on('reconnect', attemptResume);
     s.on('server:resume_failed', () => persistIdentity(null));
     s.on('server:resume_ok', ({ playerId }: { playerId: string }) => {
-      if (identity?.playerId !== playerId && identity?.resumeToken) {
-        persistIdentity({ playerId, resumeToken: identity.resumeToken });
+      const currentIdentity = identityRef.current;
+      if (currentIdentity?.playerId !== playerId && currentIdentity?.resumeToken) {
+        persistIdentity({ playerId, resumeToken: currentIdentity.resumeToken });
       }
     });
 
     return () => {
+      socketRef.current = null;
       s.disconnect();
     };
-  }, [attemptResume, identity?.playerId, identity?.resumeToken, persistIdentity]);
+  }, [attemptResume, persistIdentity]);
 
   useEffect(() => {
     if (!socket || typeof document === 'undefined') return;
@@ -99,7 +111,7 @@ export function useSocket() {
     if (connected) {
       attemptResume();
     }
-  }, [attemptResume, connected, identity?.playerId, identity?.resumeToken]);
+  }, [attemptResume, connected]);
 
   return { socket, state, connected, playerId: identity?.playerId, persistIdentity };
 }
