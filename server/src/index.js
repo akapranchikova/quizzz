@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import chokidar from 'chokidar';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { randomBytes, randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, '../../data');
@@ -34,6 +35,7 @@ const INTERMISSION_DURATION_MS = 6000;
 const MINI_GAME_DURATION_MS = 9000;
 const NEXT_ROUND_CONFIRM_DURATION_MS = 8000;
 const ALL_CORRECT_BONUS_POINTS = 350;
+const RESUME_GRACE_PERIOD_MS = 45000;
 
 const app = express();
 app.use(cors());
@@ -48,6 +50,8 @@ const io = new Server(server, {
   cors: {
     origin: '*',
   },
+  pingInterval: 10000,
+  pingTimeout: 20000,
 });
 
 const gameState = {
@@ -77,10 +81,13 @@ const gameState = {
   miniGamePool: [],
   activeMiniGame: null,
   miniGamesPlayed: [],
+  phaseEligiblePlayerIds: null,
 };
 
 let phaseTimer = null;
 let revealTimer = null;
+const socketToPlayerId = new Map();
+const reconnectTimers = new Map();
 
 const RANDOM_EVENTS = [
   {
@@ -176,6 +183,94 @@ function getLocalIp() {
 }
 
 const preferredHost = process.env.PUBLIC_HOST || getLocalIp();
+const phasesWithEligiblePlayers = new Set(['category_select', 'ability_phase', 'question']);
+
+function generateResumeToken() {
+  return randomBytes(24).toString('hex');
+}
+
+function clearGraceTimer(playerId) {
+  const timer = reconnectTimers.get(playerId);
+  if (timer) {
+    clearTimeout(timer);
+  }
+  reconnectTimers.delete(playerId);
+}
+
+function cleanupPlayerState(playerId) {
+  delete gameState.categoryVotes[playerId];
+  delete gameState.preQuestionReady[playerId];
+  delete gameState.answers[playerId];
+}
+
+function scheduleOfflineStatus(player) {
+  clearGraceTimer(player.id);
+  reconnectTimers.set(
+    player.id,
+    setTimeout(() => {
+      const existing = gameState.players.get(player.id);
+      if (!existing || existing.status === 'active') return;
+      if (Date.now() - (existing.lastSeenAt || 0) < RESUME_GRACE_PERIOD_MS) return;
+      existing.status = 'offline';
+      if (gameState.phase === 'lobby' || gameState.phase === 'game_end') {
+        gameState.players.delete(player.id);
+        cleanupPlayerState(player.id);
+      }
+      broadcastState();
+      syncLobbyState();
+    }, RESUME_GRACE_PERIOD_MS)
+  );
+}
+
+function setEligiblePlayersForPhase(phase) {
+  if (phasesWithEligiblePlayers.has(phase)) {
+    gameState.phaseEligiblePlayerIds = new Set(getActivePlayers().map((p) => p.id));
+  } else {
+    gameState.phaseEligiblePlayerIds = null;
+  }
+}
+
+function isPlayerEligible(playerId) {
+  if (!gameState.phaseEligiblePlayerIds) return true;
+  return gameState.phaseEligiblePlayerIds.has(playerId);
+}
+
+function getActivePlayers() {
+  return Array.from(gameState.players.values()).filter((p) => p.status === 'active');
+}
+
+function getActivePlayerIds() {
+  return getActivePlayers().map((p) => p.id);
+}
+
+function getActiveEligiblePlayerIds() {
+  const eligible = gameState.phaseEligiblePlayerIds
+    ? Array.from(gameState.phaseEligiblePlayerIds)
+    : Array.from(gameState.players.keys());
+  return eligible.filter((id) => gameState.players.get(id)?.status === 'active');
+}
+
+function getPlayerBySocket(socket) {
+  const playerId = socketToPlayerId.get(socket.id);
+  return playerId ? gameState.players.get(playerId) : null;
+}
+
+function attachSocketToPlayer(player, socket) {
+  if (!player) return;
+  socketToPlayerId.set(socket.id, player.id);
+  player.socketId = socket.id;
+  player.status = 'active';
+  player.lastSeenAt = Date.now();
+  clearGraceTimer(player.id);
+}
+
+function markPlayerInactive(player) {
+  if (!player) return;
+  player.status = 'inactive';
+  player.lastSeenAt = Date.now();
+  player.socketId = null;
+  scheduleOfflineStatus(player);
+}
 
 async function loadJsonFile(filePath, fallback = {}) {
   try {
@@ -197,6 +292,8 @@ async function loadData() {
   gameState.miniGamePool = MINI_GAMES.slice();
   for (const player of gameState.players.values()) {
     player.abilityUses = getAbilityUses(player.characterId);
+    player.status = player.status || 'active';
+    player.lastSeenAt = player.lastSeenAt || Date.now();
   }
   io.emit('server:dataReloaded');
   broadcastState();
@@ -227,6 +324,7 @@ function resetGame(keepPlayers = true) {
   gameState.miniGamePool = MINI_GAMES.slice();
   gameState.activeMiniGame = null;
   gameState.miniGamesPlayed = [];
+  gameState.phaseEligiblePlayerIds = null;
   if (!keepPlayers) {
     gameState.players.clear();
   } else {
@@ -238,6 +336,8 @@ function resetGame(keepPlayers = true) {
       player.eventLock = null;
       player.statusEffects = { doublePoints: false, eventShield: false };
       player.preparedForQuestion = false;
+      player.status = player.status || 'active';
+      player.lastSeenAt = Date.now();
     }
   }
   broadcastState();
@@ -343,6 +443,7 @@ function setPhase(phase, durationMs = null, onEnter = null) {
   gameState.phaseStartedAt = now;
   gameState.phaseEndsAt = durationMs ? now + durationMs : null;
   updateNarrationForPhase(phase);
+  setEligiblePlayersForPhase(phase);
   if (onEnter) {
     onEnter();
   }
@@ -440,22 +541,23 @@ function resolveCategory() {
 }
 
 function haveAllPlayersVoted() {
-  const players = Array.from(gameState.players.keys());
+  const players = getActiveEligiblePlayerIds();
   return players.length > 0 && players.every((id) => Boolean(gameState.categoryVotes?.[id]));
 }
 
 function haveAllPlayersPrepared() {
-  const players = Array.from(gameState.players.keys());
+  const players = getActiveEligiblePlayerIds();
   return players.length > 0 && players.every((id) => Boolean(gameState.preQuestionReady?.[id]));
 }
 
 function haveAllPlayersAnswered() {
-  const players = Array.from(gameState.players.keys());
+  const players = getActiveEligiblePlayerIds();
   return players.length > 0 && players.every((id) => Boolean(gameState.answers?.[id]));
 }
 
 function markPlayerPrepared(playerId) {
   if (!playerId) return;
+  if (!isPlayerEligible(playerId)) return;
   gameState.preQuestionReady[playerId] = true;
   const player = gameState.players.get(playerId);
   if (player) {
@@ -509,6 +611,7 @@ function prepareForMatch() {
   gameState.miniGamesPlayed = [];
   gameState.activeMiniGame = null;
   gameState.categoryOptions = chooseCategoryOptions();
+  gameState.phaseEligiblePlayerIds = null;
   for (const player of gameState.players.values()) {
     player.score = 0;
     player.shieldConsumed = false;
@@ -520,17 +623,17 @@ function prepareForMatch() {
 }
 
 function hasMinimumPlayers() {
-  return gameState.players.size >= MIN_PLAYERS_TO_START;
+  return getActivePlayers().length >= MIN_PLAYERS_TO_START;
 }
 
 function hasEnoughReadyPlayers() {
-  const players = Array.from(gameState.players.values());
+  const players = getActivePlayers();
   const enoughPlayers = players.length >= MIN_PLAYERS_TO_START;
   return enoughPlayers && players.every((p) => p.ready);
 }
 
 function readyCountMeetsMinimum() {
-  const players = Array.from(gameState.players.values());
+  const players = getActivePlayers();
   const readyCount = players.filter((p) => p.ready).length;
   return players.length >= MIN_PLAYERS_TO_START && readyCount >= MIN_PLAYERS_TO_START;
 }
@@ -704,7 +807,7 @@ function startMiniGame() {
 }
 
 function pickEventTargetId() {
-  const players = Array.from(gameState.players.values());
+  const players = getActivePlayers();
   if (!players.length) return null;
   const shuffled = players.sort(() => Math.random() - 0.5);
   return shuffled[0].id;
@@ -724,29 +827,37 @@ function applyRandomEvent(payload) {
   }
   const targets =
     payload.targetMode === 'all'
-      ? Array.from(gameState.players.values())
-      : [gameState.players.get(payload.targetPlayerId)].filter(Boolean);
+      ? getActivePlayers()
+      : [gameState.players.get(payload.targetPlayerId)].filter((p) => p && p.status === 'active');
   for (const target of targets) {
     if (payload.kind === 'malus' && applyShieldIfPresent(target)) {
       continue;
     }
     if (payload.effect === 'double_points') {
       target.statusEffects = { ...(target.statusEffects || {}), doublePoints: true };
-      io.to(target.socketId).emit('event:applied', payload);
+      if (target.socketId) {
+        io.to(target.socketId).emit('event:applied', payload);
+      }
     }
     if (payload.effect === 'event_shield') {
       target.statusEffects = { ...(target.statusEffects || {}), eventShield: true };
-      io.to(target.socketId).emit('event:applied', payload);
+      if (target.socketId) {
+        io.to(target.socketId).emit('event:applied', payload);
+      }
     }
     if (payload.effect === 'ice' || payload.effect === 'mud') {
       target.eventLock = { type: payload.effect, cleared: false };
-      io.to(target.socketId).emit('event:applied', { ...payload, requiresAction: true });
+      if (target.socketId) {
+        io.to(target.socketId).emit('event:applied', { ...payload, requiresAction: true });
+      }
     }
     if (payload.effect === 'shuffle') {
       const question = gameState.nextQuestion || gameState.currentQuestion;
       if (!question) continue;
       const order = [...question.options].sort(() => Math.random() - 0.5).map((o) => o.id);
-      io.to(target.socketId).emit('event:shuffleOptions', { order, from: 'случайное событие' });
+      if (target.socketId) {
+        io.to(target.socketId).emit('event:shuffleOptions', { order, from: 'случайное событие' });
+      }
     }
   }
   broadcastState();
@@ -786,6 +897,8 @@ function buildStatePayload() {
       eventLock: p.eventLock,
       statusEffects: p.statusEffects,
       preparedForQuestion: p.preparedForQuestion,
+      status: p.status || 'active',
+      lastSeenAt: p.lastSeenAt,
       lastAnswer: gameState.answers[p.id] || null,
     })),
     preferredHost,
@@ -864,6 +977,8 @@ function maybeEndGame() {
 
 function handleAbilityUse(player, { abilityId, targetPlayerId }) {
   if (!abilityId || !player || gameState.phase !== 'ability_phase') return;
+  if (player.status !== 'active' || !isPlayerEligible(player.id)) return;
+  if (!player.socketId) return;
   const usesLeft = player.abilityUses?.[abilityId] ?? 0;
   if (usesLeft <= 0) return;
   const character = gameState.characters.find((c) => c.id === player.characterId);
@@ -886,22 +1001,26 @@ function handleAbilityUse(player, { abilityId, targetPlayerId }) {
 
   if (abilityId === 'shuffle_enemy' && targetPlayerId) {
     const target = gameState.players.get(targetPlayerId);
-    if (!target) return;
+    if (!target || target.status !== 'active') return;
     if (applyShieldIfPresent(target)) return;
     decrementUse();
     const question = gameState.currentQuestion;
     if (!question) return;
     const shuffledOptions = [...question.options].sort(() => Math.random() - 0.5).map((o) => o.id);
-    io.to(target.socketId).emit('ability:shuffleOptions', { order: shuffledOptions, from: player.nickname });
+    if (target.socketId) {
+      io.to(target.socketId).emit('ability:shuffleOptions', { order: shuffledOptions, from: player.nickname });
+    }
   }
 
   if (abilityId === 'freeze_enemy' && targetPlayerId) {
     const target = gameState.players.get(targetPlayerId);
-    if (!target) return;
+    if (!target || target.status !== 'active') return;
     if (applyShieldIfPresent(target)) return;
     decrementUse();
     target.frozenUntil = Date.now() + FREEZE_DURATION_MS;
-    io.to(target.socketId).emit('ability:freeze', { durationMs: FREEZE_DURATION_MS, from: player.nickname });
+    if (target.socketId) {
+      io.to(target.socketId).emit('ability:freeze', { durationMs: FREEZE_DURATION_MS, from: player.nickname });
+    }
   }
 
   broadcastState();
@@ -910,7 +1029,9 @@ function handleAbilityUse(player, { abilityId, targetPlayerId }) {
 function applyShieldIfPresent(target) {
   if (target.statusEffects?.eventShield) {
     target.statusEffects.eventShield = false;
-    io.to(target.socketId).emit('event:shielded');
+    if (target.socketId) {
+      io.to(target.socketId).emit('event:shielded');
+    }
     return true;
   }
   const remainingShield = target.abilityUses?.shield ?? 0;
@@ -918,8 +1039,20 @@ function applyShieldIfPresent(target) {
   if (!hasShield) return false;
   target.abilityUses.shield = remainingShield - 1;
   target.shieldConsumed = true;
-  io.to(target.socketId).emit('ability:shieldTriggered');
+  if (target.socketId) {
+    io.to(target.socketId).emit('ability:shieldTriggered');
+  }
   return true;
+}
+
+function notifyMissedRound(player, socket) {
+  if (!player) return;
+  if (gameState.phase === 'question' && !isPlayerEligible(player.id)) {
+    const targetSocketId = socket?.id || player.socketId;
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('server:you_missed_round', { roundIndex: gameState.roundNumber });
+    }
+  }
 }
 
 io.on('connection', (socket) => {
@@ -930,13 +1063,21 @@ io.on('connection', (socket) => {
       callback?.({ ok: false, error: 'Nickname required' });
       return;
     }
-    const exists = Array.from(gameState.players.values()).some((p) => p.nickname.toLowerCase() === nickname.toLowerCase());
+    if (gameState.players.size >= MAX_PLAYERS) {
+      callback?.({ ok: false, error: 'Лобби заполнено' });
+      return;
+    }
+    const exists = Array.from(gameState.players.values()).some(
+      (p) => p.nickname.toLowerCase() === nickname.toLowerCase()
+    );
     if (exists) {
       callback?.({ ok: false, error: 'Такой игрок уже есть' });
       return;
     }
+    const playerId = randomUUID();
+    const resumeToken = generateResumeToken();
     const player = {
-      id: socket.id,
+      id: playerId,
       socketId: socket.id,
       nickname,
       characterId,
@@ -948,18 +1089,41 @@ io.on('connection', (socket) => {
       eventLock: null,
       preparedForQuestion: false,
       statusEffects: { doublePoints: false, eventShield: false },
+      status: 'active',
+      resumeToken,
+      lastSeenAt: Date.now(),
     };
-    gameState.players.set(socket.id, player);
+    socketToPlayerId.set(socket.id, playerId);
+    gameState.players.set(playerId, player);
     broadcastState();
     syncLobbyState();
-    callback?.({ ok: true, playerId: socket.id });
+    callback?.({ ok: true, playerId, resumeToken });
+  });
+
+  socket.on('player:resume', ({ playerId, resumeToken }, callback) => {
+    const player = playerId ? gameState.players.get(playerId) : null;
+    if (!player || !resumeToken || player.resumeToken !== resumeToken) {
+      callback?.({ ok: false });
+      socket.emit('server:resume_failed');
+      return;
+    }
+    if (player.socketId && player.socketId !== socket.id) {
+      const oldSocket = io.sockets.sockets.get(player.socketId);
+      oldSocket?.disconnect(true);
+    }
+    attachSocketToPlayer(player, socket);
+    callback?.({ ok: true, playerId });
+    socket.emit('server:resume_ok', { playerId });
+    socket.emit('server:state', buildStatePayload());
+    broadcastState();
+    notifyMissedRound(player, socket);
   });
 
   socket.on('player:voteCategory', ({ categoryId }) => {
     if (gameState.phase !== 'category_select') return;
     if (!gameState.categoryOptions.find((c) => c.id === categoryId)) return;
-    const player = gameState.players.get(socket.id);
-    if (!player) return;
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active' || !isPlayerEligible(player.id)) return;
     gameState.categoryVotes[player.id] = categoryId;
     broadcastState();
     startRoundFromVotes(true);
@@ -972,16 +1136,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('player:ready', (isReady) => {
-    const player = gameState.players.get(socket.id);
-    if (!player) return;
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active') return;
     player.ready = Boolean(isReady);
     broadcastState();
     syncLobbyState();
   });
 
   socket.on('player:answer', ({ optionId }) => {
-    const player = gameState.players.get(socket.id);
-    if (!player || gameState.phase !== 'question' || !gameState.currentQuestion) return;
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active' || gameState.phase !== 'question' || !gameState.currentQuestion) return;
+    if (!isPlayerEligible(player.id)) {
+      notifyMissedRound(player, socket);
+      return;
+    }
     const now = Date.now();
     if (player.frozenUntil && now < player.frozenUntil) {
       io.to(socket.id).emit('player:blocked', { reason: 'frozen' });
@@ -1003,8 +1171,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('player:clearEventLock', () => {
-    const player = gameState.players.get(socket.id);
-    if (!player || !player.eventLock) return;
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active' || !player.eventLock) return;
     player.eventLock.cleared = true;
     io.to(socket.id).emit('event:lockCleared');
     broadcastState();
@@ -1012,26 +1180,30 @@ io.on('connection', (socket) => {
 
   socket.on('player:confirmPreQuestion', () => {
     if (gameState.phase !== 'ability_phase') return;
-    const player = gameState.players.get(socket.id);
-    if (!player) return;
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active' || !isPlayerEligible(player.id)) return;
     markPlayerPrepared(player.id);
   });
 
   socket.on('player:useAbility', (payload) => {
-    const player = gameState.players.get(socket.id);
-    if (!player || gameState.phase !== 'ability_phase') return;
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active' || gameState.phase !== 'ability_phase') return;
+    if (!isPlayerEligible(player.id)) return;
     handleAbilityUse(player, payload || {});
   });
 
   socket.on('player:continueNextRound', () => {
     if (gameState.phase !== 'next_round_confirm') return;
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active') return;
     beginRound();
   });
 
   socket.on('disconnect', () => {
-    gameState.players.delete(socket.id);
-    delete gameState.categoryVotes[socket.id];
-    delete gameState.preQuestionReady[socket.id];
+    const player = getPlayerBySocket(socket);
+    socketToPlayerId.delete(socket.id);
+    if (!player) return;
+    markPlayerInactive(player);
     broadcastState();
     syncLobbyState();
   });

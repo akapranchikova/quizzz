@@ -14,7 +14,7 @@ function reorderOptions(options: QuestionOption[], order?: string[] | null) {
 type ControllerMode = 'join' | 'ready' | 'wait_start' | 'start' | 'in_game';
 
 export default function ControllerPage() {
-  const { socket, state, connected } = useSocket();
+  const { socket, state, connected, playerId, persistIdentity } = useSocket();
   const [nickname, setNickname] = useState('');
   const [characterId, setCharacterId] = useState('spark');
   const [targetPlayerId, setTargetPlayerId] = useState('');
@@ -25,12 +25,13 @@ export default function ControllerPage() {
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [info, setInfo] = useState('');
   const [joinError, setJoinError] = useState('');
+  const [missedRound, setMissedRound] = useState<number | null>(null);
 
-  const me = state?.players.find((p) => p.id === socket?.id);
+  const me = state?.players.find((p) => p.id === playerId);
   const myCharacter = state?.characters.find((c) => c.id === (me?.characterId || characterId));
   const ability: Ability | undefined = myCharacter?.ability;
   const abilityUses = me?.abilityUses?.[ability?.id || ''] ?? ability?.usesPerGame ?? 0;
-  const canUseAbility = abilityUses > 0 && state?.phase === 'ability_phase';
+  const isActivePlayer = me?.status === 'active';
   const hasAnswered = Boolean(me?.lastAnswer);
   const preparedForQuestion = me ? Boolean(state?.preQuestionReady?.[me.id] || me.preparedForQuestion) : false;
 
@@ -94,6 +95,15 @@ export default function ControllerPage() {
   }, [socket]);
 
   useEffect(() => {
+    if (!socket) return;
+    const handleMissedRound = ({ roundIndex }: { roundIndex?: number }) => setMissedRound(roundIndex ?? 0);
+    socket.on('server:you_missed_round', handleMissedRound);
+    return () => {
+      socket.off('server:you_missed_round', handleMissedRound);
+    };
+  }, [socket]);
+
+  useEffect(() => {
     setAllowedOptions(null);
     setOptionOrder(null);
     setFreezeUntil(0);
@@ -106,6 +116,13 @@ export default function ControllerPage() {
   }, [me?.eventLock]);
 
   useEffect(() => {
+    if (!state) return;
+    if (state.phase !== 'question' && state.phase !== 'answer_reveal' && state.phase !== 'score') {
+      setMissedRound(null);
+    }
+  }, [state?.phase, state?.currentQuestion?.id]);
+
+  useEffect(() => {
     if (!state?.characters.length) return;
     const first = state.characters[0];
     setCharacterId((prev) => prev || first.id);
@@ -114,9 +131,15 @@ export default function ControllerPage() {
   const joinGame = () => {
     if (!socket || !nickname) return;
     setJoinError('');
-    socket.emit('player:join', { nickname, characterId }, (res?: { ok: boolean; error?: string }) => {
-      if (!res?.ok && res?.error) {
-        setJoinError(res.error);
+    socket.emit('player:join', { nickname, characterId }, (res?: { ok: boolean; error?: string; playerId?: string; resumeToken?: string }) => {
+      if (!res?.ok) {
+        if (res?.error) {
+          setJoinError(res.error);
+        }
+        return;
+      }
+      if (res?.playerId && res?.resumeToken) {
+        persistIdentity({ playerId: res.playerId, resumeToken: res.resumeToken });
       }
     });
   };
@@ -140,7 +163,8 @@ export default function ControllerPage() {
   const freezeActive = freezeUntil > Date.now();
   const lockActive = Boolean(eventLock && !eventLock.cleared);
 
-  const canAnswer = state?.phase === 'question' && !hasAnswered && !freezeActive && !lockActive && Boolean(me);
+  const canAnswer = state?.phase === 'question' && !hasAnswered && !freezeActive && !lockActive && Boolean(me) && !missedRound && isActivePlayer;
+  const canParticipate = Boolean(isActivePlayer && !missedRound);
 
   const onAnswer = (optionId: string) => {
     if (!canAnswer) return;
@@ -148,12 +172,12 @@ export default function ControllerPage() {
   };
 
   const confirmPreQuestion = () => {
-    if (!socket || state?.phase !== 'ability_phase') return;
+    if (!socket || state?.phase !== 'ability_phase' || !canParticipate) return;
     socket.emit('player:confirmPreQuestion');
   };
 
   const useAbility = () => {
-    if (!ability || abilityUses <= 0 || state?.phase !== 'ability_phase') return false;
+    if (!ability || abilityUses <= 0 || state?.phase !== 'ability_phase' || !canParticipate) return false;
     if (ability.id === 'shuffle_enemy' || ability.id === 'freeze_enemy') {
       if (!targetPlayerId) {
         setInfo('Выберите цель для способности.');
@@ -176,12 +200,12 @@ export default function ControllerPage() {
   const categoriesForVote = (state?.categoryOptions?.length ? state.categoryOptions : state?.categories || []).slice(0, 4);
 
   const voteForCategory = (categoryId: string) => {
-    if (!me || !socket || state?.phase !== 'category_select') return;
+    if (!me || !socket || state?.phase !== 'category_select' || !canParticipate) return;
     socket.emit('player:voteCategory', { categoryId });
   };
 
   const clearEventLock = () => {
-    if (!socket || !eventLock) return;
+    if (!socket || !eventLock || !isActivePlayer) return;
     socket.emit('player:clearEventLock');
   };
 
@@ -239,6 +263,8 @@ export default function ControllerPage() {
           info={info}
           activeEvent={activeEvent}
           continueNextRound={continueNextRound}
+          missedRound={missedRound}
+          isActivePlayer={isActivePlayer}
         />
       )}
     </div>
@@ -345,6 +371,8 @@ interface ControllerInGameProps {
   info: string;
   activeEvent: ActiveEvent | null;
   continueNextRound: () => void;
+  missedRound: number | null;
+  isActivePlayer: boolean;
 }
 
 function ControllerInGame({
@@ -372,6 +400,8 @@ function ControllerInGame({
   info,
   activeEvent,
   continueNextRound,
+  missedRound,
+  isActivePlayer,
 }: ControllerInGameProps) {
   const { phase, currentQuestion } = state;
   const [localAnswerId, setLocalAnswerId] = useState<string | null>(null);
@@ -381,10 +411,17 @@ function ControllerInGame({
     setLocalAnswerId(null);
     setPressedOptionId(null);
   }, [currentQuestion?.id]);
+  const statusBanner = (
+    <>
+      {!isActivePlayer && <div className="info-banner">Соединение потеряно, восстанавливаем участие…</div>}
+      {missedRound !== null && <div className="info-banner">Вы пропустили этот вопрос. Ждём следующий раунд…</div>}
+    </>
+  );
 
   if (phase === 'next_round_confirm') {
     return (
       <div className="controller-stage controller-centered">
+        {statusBanner}
         <button className="button-primary primary-action controller-main-button" onClick={continueNextRound}>
           Продолжить
         </button>
@@ -398,6 +435,7 @@ function ControllerInGame({
         {state.phaseStartedAt && state.phaseEndsAt && (
           <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Выбор категории" />
         )}
+        {statusBanner}
         <div className="controller-stack">
           <div className="controller-title">Выберите категорию</div>
           <div className="mobile-answer-grid">
@@ -408,7 +446,7 @@ function ControllerInGame({
                   key={cat.id}
                   className={`option-button mobile-option ${isMine ? 'option-selected' : ''}`}
                   onClick={() => voteForCategory(cat.id)}
-                  disabled={phase !== 'category_select'}
+                  disabled={phase !== 'category_select' || !canParticipate}
                 >
                   <div className="option-title">{cat.icon || '📚'} {cat.title}</div>
                 </button>
@@ -424,6 +462,7 @@ function ControllerInGame({
     return (
       <div className="controller-stage controller-stage--flow controller-stage--stack">
         <div className="controller-title">Подготовка</div>
+        {statusBanner}
         <div className="ability-card mobile-ability">
           <div className="ability-name">{ability ? ability.name : 'Способности недоступны'}</div>
           {ability && <div className="small-muted">{ability.description}</div>}
@@ -440,11 +479,11 @@ function ControllerInGame({
           )}
           <div className="stacked-inputs" style={{ marginTop: 12 }}>
             {ability && ability.id !== 'shield' && (
-              <button className="button-primary cta-button controller-main-button" onClick={applyAbilityAndConfirm} disabled={preparedForQuestion || abilityUses <= 0}>
+              <button className="button-primary cta-button controller-main-button" onClick={applyAbilityAndConfirm} disabled={preparedForQuestion || abilityUses <= 0 || !canParticipate}>
                 Применить
               </button>
             )}
-            <button className="button-primary cta-button controller-main-button" onClick={confirmPreQuestion} disabled={preparedForQuestion}>
+            <button className="button-primary cta-button controller-main-button" onClick={confirmPreQuestion} disabled={preparedForQuestion || !canParticipate}>
               {preparedForQuestion ? 'Готово' : 'Пропустить'}
             </button>
           </div>
@@ -483,6 +522,7 @@ function ControllerInGame({
             className="controller-timer timer-bar--compact"
           />
         )}
+          {statusBanner}
         <div className="controller-question-meta">
           {currentQuestion.text && <div className="question-hint">{currentQuestion.text}</div>}
           <div className="controller-status-row">
@@ -540,6 +580,7 @@ function ControllerInGame({
   if (phase === 'answer_reveal' || phase === 'score') {
     return (
       <div className="controller-stage controller-centered">
+        {statusBanner}
         <div className="wait-text">Ответ принят</div>
         {info && <div className="info-banner" style={{ marginTop: 8 }}>{info}</div>}
       </div>
@@ -548,6 +589,7 @@ function ControllerInGame({
 
   return (
     <div className="controller-stage controller-centered">
+      {statusBanner}
       <div className="wait-text">Смотрите на экран</div>
       {activeEvent && <div className="info-banner" style={{ marginTop: 10 }}>{activeEvent.title}</div>}
     </div>
