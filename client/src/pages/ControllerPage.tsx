@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
-import { Ability, QuestionOption } from '../types';
+import { Ability, ActiveEvent, QuestionOption } from '../types';
 import TimerBar from '../components/TimerBar';
 
 function reorderOptions(options: QuestionOption[], order?: string[] | null) {
@@ -19,6 +19,8 @@ export default function ControllerPage() {
   const [allowedOptions, setAllowedOptions] = useState<string[] | null>(null);
   const [optionOrder, setOptionOrder] = useState<string[] | null>(null);
   const [freezeUntil, setFreezeUntil] = useState(0);
+  const [eventLock, setEventLock] = useState<{ type: string; cleared?: boolean } | null>(null);
+  const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [info, setInfo] = useState('');
   const [pendingCategoryId, setPendingCategoryId] = useState('');
   const [joinError, setJoinError] = useState('');
@@ -43,12 +45,38 @@ export default function ControllerPage() {
     };
     const handleShield = () => setInfo('Щит поглотил пакость!');
     const handleBlocked = () => setInfo('Пока нельзя ответить (заморозка).');
+    const handleEventApplied = (payload: ActiveEvent) => {
+      setActiveEvent(payload);
+      if (payload.effect === 'ice' || payload.effect === 'mud') {
+        setEventLock({ type: payload.effect, cleared: false });
+        setInfo(payload.effect === 'ice' ? 'Лёд блокирует ответы' : 'Экран заляпан — очистите его');
+      }
+      if (payload.effect === 'double_points') {
+        setInfo('Двойные очки за следующий верный ответ!');
+      }
+      if (payload.effect === 'event_shield') {
+        setInfo('Вы получили щит от ближайшей пакости');
+      }
+    };
+    const handleEventShuffle = ({ order, from }: { order: string[]; from?: string }) => {
+      setOptionOrder(order);
+      setInfo(`Ответы хаотично перемешаны (${from || 'событие'})`);
+    };
+    const handleLockCleared = () => {
+      setEventLock(null);
+      setInfo('Эффект очищен, можно отвечать');
+    };
+    const handleEventShielded = () => setInfo('Щит от события поглотил пакость');
 
     socket.on('ability:fifty', handleFifty);
     socket.on('ability:shuffleOptions', handleShuffle);
     socket.on('ability:freeze', handleFreeze);
     socket.on('ability:shieldTriggered', handleShield);
     socket.on('player:blocked', handleBlocked);
+    socket.on('event:applied', handleEventApplied);
+    socket.on('event:shuffleOptions', handleEventShuffle);
+    socket.on('event:lockCleared', handleLockCleared);
+    socket.on('event:shielded', handleEventShielded);
 
     return () => {
       socket.off('ability:fifty', handleFifty);
@@ -56,6 +84,10 @@ export default function ControllerPage() {
       socket.off('ability:freeze', handleFreeze);
       socket.off('ability:shieldTriggered', handleShield);
       socket.off('player:blocked', handleBlocked);
+      socket.off('event:applied', handleEventApplied);
+      socket.off('event:shuffleOptions', handleEventShuffle);
+      socket.off('event:lockCleared', handleLockCleared);
+      socket.off('event:shielded', handleEventShielded);
     };
   }, [socket]);
 
@@ -65,7 +97,12 @@ export default function ControllerPage() {
     setFreezeUntil(0);
     setInfo('');
     setPendingCategoryId('');
+    setActiveEvent(null);
   }, [state?.currentQuestion?.id, state?.phase]);
+
+  useEffect(() => {
+    setEventLock(me?.eventLock || null);
+  }, [me?.eventLock]);
 
   useEffect(() => {
     if (!state?.characters.length) return;
@@ -95,8 +132,9 @@ export default function ControllerPage() {
   const currentQuestion = state?.currentQuestion;
   const orderedOptions = currentQuestion ? reorderOptions(currentQuestion.options, optionOrder) : [];
   const freezeActive = freezeUntil > Date.now();
+  const lockActive = Boolean(eventLock && !eventLock.cleared);
 
-  const canAnswer = state?.phase === 'question' && !hasAnswered && !freezeActive && Boolean(me);
+  const canAnswer = state?.phase === 'question' && !hasAnswered && !freezeActive && !lockActive && Boolean(me);
 
   const onAnswer = (optionId: string) => {
     if (!canAnswer) return;
@@ -125,6 +163,14 @@ export default function ControllerPage() {
         {freezeActive && (
           <div className="alert-warning" style={{ marginBottom: 8, padding: 10 }}>Заморозка активна</div>
         )}
+        {lockActive && (
+          <div className="alert-warning" style={{ marginBottom: 8, padding: 10 }}>
+            {eventLock?.type === 'mud' ? 'Ответы заляпаны — очистите экран' : 'Лёд блокирует ответы'}
+            <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
+              Очистить/разбить
+            </button>
+          </div>
+        )}
         <div className="mobile-answer-grid">
           {orderedOptions.map((opt) => {
             const disabled = !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
@@ -151,21 +197,29 @@ export default function ControllerPage() {
   const otherPlayers = useMemo(() => state?.players.filter((p) => p.id !== me?.id) || [], [state?.players, me]);
   const myVote = me?.id ? state?.categoryVotes?.[me.id] : undefined;
   const voteStats = state?.categoryVoteStats || {};
-  const categoriesForVote = (state?.categories || []).slice(0, 4);
+  const categoriesForVote = (state?.categoryOptions?.length ? state.categoryOptions : state?.categories || []).slice(0, 4);
 
   const statusMessage = () => {
     switch (state?.phase) {
-      case 'category_pick':
+      case 'ready_check':
+        return 'Подтвердите готовность — стартуем автоматически.';
+      case 'round_intro':
+        return 'Новый раунд вот-вот начнётся.';
+      case 'category_select':
         return 'Выбираем категорию. Итоги появятся после таймера.';
       case 'category_reveal':
         return 'Категория выбрана. Готовимся.';
+      case 'random_event':
+        return 'Случайное событие — смотрите на экран.';
       case 'ability':
         return 'Решите, будете ли использовать способность.';
       case 'question':
         return 'Отвечайте быстрее на вопрос!';
-      case 'reveal':
+      case 'answer_reveal':
         return 'Смотрите результаты на экране.';
-      case 'round_end':
+      case 'score':
+        return 'Очки начисляются...';
+      case 'intermission':
         return 'Ожидаем следующий раунд.';
       default:
         return 'Ждём остальных игроков и старт';
@@ -173,13 +227,15 @@ export default function ControllerPage() {
   };
 
   const voteForCategory = (categoryId: string) => {
-    if (!me || !socket || state?.phase !== 'category_pick') return;
+    if (!me || !socket || state?.phase !== 'category_select') return;
     setPendingCategoryId(categoryId);
     socket.emit('player:voteCategory', { categoryId });
   };
 
-  const isHost = state?.hostPlayerId === me?.id;
-  const everyoneReady = (state?.players || []).length > 0 && (state?.players || []).every((p) => p.ready);
+  const clearEventLock = () => {
+    if (!socket || !eventLock) return;
+    socket.emit('player:clearEventLock');
+  };
 
   return (
     <div className="controller-shell">
@@ -193,6 +249,12 @@ export default function ControllerPage() {
         </div>
         {state?.phaseEndsAt && state?.phaseStartedAt && (
           <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Таймер стадии" />
+        )}
+        {activeEvent && (
+          <div className="alert" style={{ marginTop: 8 }}>
+            {activeEvent.kind === 'malus' ? 'Пакость' : 'Баф'}: {activeEvent.title}
+            {activeEvent.description && <div className="small-muted">{activeEvent.description}</div>}
+          </div>
         )}
 
         {!me && (
@@ -214,19 +276,18 @@ export default function ControllerPage() {
 
         {me && (
           <div className="stacked-inputs">
-            <button className="button-primary cta-button" onClick={toggleReady} disabled={state?.phase !== 'lobby'}>
+            <button
+              className="button-primary cta-button"
+              onClick={toggleReady}
+              disabled={!(state?.phase === 'lobby' || state?.phase === 'ready_check' || state?.phase === 'game_end')}
+            >
               {me.ready ? 'Не готов' : 'Готов'}
             </button>
-            {isHost && state?.phase === 'lobby' && (
-              <button className="button-primary cta-button" disabled={!everyoneReady} onClick={() => socket?.emit('player:startGame')}>
-                Начать игру (я первый)
-              </button>
-            )}
             <div className="small-muted">{statusMessage()}</div>
           </div>
         )}
 
-        {me && state?.phase === 'category_pick' && (
+        {me && state?.phase === 'category_select' && (
           <div className="mobile-card" style={{ marginTop: 12 }}>
             <div className="section-title" style={{ marginBottom: 8 }}>
               Голосуйте за категорию
@@ -240,7 +301,7 @@ export default function ControllerPage() {
                     key={cat.id}
                     className="option-button mobile-option"
                     onClick={() => voteForCategory(cat.id)}
-                    disabled={state.phase !== 'category_pick'}
+                    disabled={state.phase !== 'category_select'}
                     style={{
                       borderColor: isMine ? '#22d3ee' : undefined,
                     }}
@@ -287,13 +348,23 @@ export default function ControllerPage() {
         )}
 
         {info && <div className="alert" style={{ marginTop: 10 }}>{info}</div>}
+        {lockActive && state?.phase !== 'question' && (
+          <div className="alert-warning" style={{ marginTop: 10, padding: 10 }}>
+            Эффект события блокирует ответы.
+            <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
+              Снять эффект
+            </button>
+          </div>
+        )}
       </div>
 
       {renderQuestion()}
 
       {state?.phase !== 'question' && (
         <div className="mobile-card" style={{ marginTop: 16 }}>
-          <div className="small-muted">Смотрите на экран: {state?.phase === 'category_pick' ? 'идёт выбор категории' : 'ожидаем следующий вопрос'}</div>
+          <div className="small-muted">
+            Смотрите на экран: {state?.phase === 'category_select' ? 'идёт выбор категории' : 'ожидаем следующий вопрос'}
+          </div>
         </div>
       )}
     </div>

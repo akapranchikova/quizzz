@@ -1,11 +1,15 @@
 export type GamePhase =
   | 'lobby'
-  | 'category_pick'
+  | 'ready_check'
+  | 'round_intro'
+  | 'category_select'
   | 'category_reveal'
+  | 'random_event'
   | 'ability'
   | 'question'
-  | 'reveal'
-  | 'round_end'
+  | 'answer_reveal'
+  | 'score'
+  | 'intermission'
   | 'game_end';
 
 export interface Category {
@@ -60,18 +64,31 @@ export interface PlayerState {
   abilityUses?: Record<string, number>;
   shieldConsumed?: boolean;
   frozenUntil?: number;
+  eventLock?: { type: string; cleared?: boolean } | null;
+  statusEffects?: { doublePoints?: boolean; eventShield?: boolean };
   lastAnswer?: AnswerRecord | null;
+}
+
+export interface ActiveEvent {
+  id: string;
+  title: string;
+  kind: 'buff' | 'malus';
+  effect: string;
+  targetPlayerId?: string | null;
+  requiresAction?: boolean;
+  description?: string;
 }
 
 export interface GameState {
   phase: GamePhase;
   phaseStartedAt: number | null;
   phaseEndsAt: number | null;
+  narration?: string;
   activeCategoryId: string | null;
   categories: Category[];
+  categoryOptions: Category[];
   characters: Character[];
   players: PlayerState[];
-  hostPlayerId: string | null;
   preferredHost?: string | null;
   currentQuestion: Question | null;
   questionStartTime: number | null;
@@ -79,6 +96,11 @@ export interface GameState {
   leaderboard: { id: string; nickname: string; score: number; characterId?: string }[];
   usedQuestionCount: number;
   totalQuestions: number;
+  roundNumber: number;
+  maxRounds: number;
+  activeEvent: ActiveEvent | null;
+  randomEventChance?: number;
+  allCorrectBonusActive?: boolean;
   categoryVotes?: Record<string, string | undefined>;
   categoryVoteStats?: Record<string, number>;
 }
