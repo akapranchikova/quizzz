@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -k \"npm run dev --workspace server\" \"npm run dev --workspace client\"",
     "build": "npm run build --workspace client",
+    "test": "npm run build --workspace client && npm run test --workspace server",
     "lint": "npm run lint --workspace client || true",
     "format": "npm run format --workspace client || true"
   },
