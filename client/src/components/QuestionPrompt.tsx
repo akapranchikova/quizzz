@@ -12,8 +12,10 @@ export default function QuestionPrompt({ question, questionStartTime }: Props) {
 
   return (
     <div className="question-block">
-      <h2 style={{ marginTop: 10 }}>{question.text}</h2>
-      {endsAt && questionStartTime && <TimerBar startsAt={questionStartTime} endsAt={endsAt} label="Ответьте на вопрос" />}
+      <div className="question-text">{question.text}</div>
+      {endsAt && questionStartTime && (
+        <TimerBar startsAt={questionStartTime} endsAt={endsAt} showTimeText={false} />
+      )}
     </div>
   );
 }

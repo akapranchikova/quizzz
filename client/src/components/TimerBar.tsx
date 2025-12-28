@@ -4,9 +4,10 @@ interface Props {
   startsAt?: number | null;
   endsAt: number | null;
   label?: string;
+  showTimeText?: boolean;
 }
 
-export default function TimerBar({ startsAt, endsAt, label }: Props) {
+export default function TimerBar({ startsAt, endsAt, label, showTimeText = true }: Props) {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -27,9 +28,11 @@ export default function TimerBar({ startsAt, endsAt, label }: Props) {
   return (
     <div className="timer-bar" aria-label="timer">
       <div className="timer-inner" style={{ width: `${progress * 100}%` }} />
-      <div className="small-muted" style={{ marginTop: 6 }}>
-        {label || 'Таймер'}: осталось {seconds} сек
-      </div>
+      {showTimeText && (
+        <div className="small-muted" style={{ marginTop: 6 }}>
+          {label || 'Таймер'}: осталось {seconds} сек
+        </div>
+      )}
     </div>
   );
 }
