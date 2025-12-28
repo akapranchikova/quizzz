@@ -1,4 +1,12 @@
-export type GamePhase = 'lobby' | 'category_pick' | 'question' | 'reveal' | 'round_end' | 'game_end';
+export type GamePhase =
+  | 'lobby'
+  | 'category_pick'
+  | 'category_reveal'
+  | 'ability'
+  | 'question'
+  | 'reveal'
+  | 'round_end'
+  | 'game_end';
 
 export interface Category {
   id: string;
@@ -57,6 +65,9 @@ export interface PlayerState {
 
 export interface GameState {
   phase: GamePhase;
+  phaseStartedAt: number | null;
+  phaseEndsAt: number | null;
+  activeCategoryId: string | null;
   categories: Category[];
   characters: Character[];
   players: PlayerState[];

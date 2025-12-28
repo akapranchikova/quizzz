@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
 import { Ability, QuestionOption } from '../types';
-import PlayerList from '../components/PlayerList';
+import TimerBar from '../components/TimerBar';
 
 function reorderOptions(options: QuestionOption[], order?: string[] | null) {
   if (!order || !order.length) return options;
@@ -21,11 +21,13 @@ export default function ControllerPage() {
   const [freezeUntil, setFreezeUntil] = useState(0);
   const [info, setInfo] = useState('');
   const [pendingCategoryId, setPendingCategoryId] = useState('');
+  const [joinError, setJoinError] = useState('');
 
   const me = state?.players.find((p) => p.id === socket?.id);
   const myCharacter = state?.characters.find((c) => c.id === (me?.characterId || characterId));
   const ability: Ability | undefined = myCharacter?.ability;
   const abilityUses = me?.abilityUses?.[ability?.id || ''] ?? ability?.usesPerGame ?? 0;
+  const canUseAbility = abilityUses > 0 && (state?.phase === 'question' || state?.phase === 'ability');
   const hasAnswered = Boolean(me?.lastAnswer);
 
   useEffect(() => {
@@ -78,7 +80,12 @@ export default function ControllerPage() {
 
   const joinGame = () => {
     if (!socket || !nickname) return;
-    socket.emit('player:join', { nickname, characterId });
+    setJoinError('');
+    socket.emit('player:join', { nickname, characterId }, (res?: { ok: boolean; error?: string }) => {
+      if (!res?.ok && res?.error) {
+        setJoinError(res.error);
+      }
+    });
   };
 
   const toggleReady = () => {
@@ -97,7 +104,7 @@ export default function ControllerPage() {
   };
 
   const useAbility = () => {
-    if (!ability || abilityUses <= 0 || state?.phase !== 'question') return;
+    if (!ability || abilityUses <= 0 || (state?.phase !== 'question' && state?.phase !== 'ability')) return;
     if (ability.id === 'shuffle_enemy' || ability.id === 'freeze_enemy') {
       if (!targetPlayerId) {
         setInfo('Выберите цель для способности.');
@@ -108,11 +115,14 @@ export default function ControllerPage() {
   };
 
   const renderQuestion = () => {
-    if (!currentQuestion) return null;
+    if (!currentQuestion || state?.phase !== 'question') return null;
+    const timeLimitMs = (currentQuestion.timeLimitSec || 15) * 1000;
+    const endsAt = state.questionStartTime ? state.questionStartTime + timeLimitMs : null;
     return (
       <div className="mobile-card" style={{ marginTop: 16 }}>
         <p className="question-title">{currentQuestion.text}</p>
-        {state?.phase === 'question' && freezeActive && (
+        {endsAt && state.questionStartTime && <TimerBar startsAt={state.questionStartTime} endsAt={endsAt} label="Время на ответ" />}
+        {freezeActive && (
           <div className="alert-warning" style={{ marginBottom: 8, padding: 10 }}>Заморозка активна</div>
         )}
         <div className="mobile-answer-grid">
@@ -141,12 +151,25 @@ export default function ControllerPage() {
   const otherPlayers = useMemo(() => state?.players.filter((p) => p.id !== me?.id) || [], [state?.players, me]);
   const myVote = me?.id ? state?.categoryVotes?.[me.id] : undefined;
   const voteStats = state?.categoryVoteStats || {};
+  const categoriesForVote = (state?.categories || []).slice(0, 4);
 
   const statusMessage = () => {
-    if (state?.phase === 'category_pick') return 'Выбираем категорию голосованием ниже';
-    if (state?.phase === 'question') return 'Смотрите на варианты ниже и жмите быстрее!';
-    if (state?.phase === 'reveal') return 'Смотрите на экран: показываются ответы';
-    return 'Ждём остальных игроков и старт';
+    switch (state?.phase) {
+      case 'category_pick':
+        return 'Выбираем категорию. Итоги появятся после таймера.';
+      case 'category_reveal':
+        return 'Категория выбрана. Готовимся.';
+      case 'ability':
+        return 'Решите, будете ли использовать способность.';
+      case 'question':
+        return 'Отвечайте быстрее на вопрос!';
+      case 'reveal':
+        return 'Смотрите результаты на экране.';
+      case 'round_end':
+        return 'Ожидаем следующий раунд.';
+      default:
+        return 'Ждём остальных игроков и старт';
+    }
   };
 
   const voteForCategory = (categoryId: string) => {
@@ -168,6 +191,9 @@ export default function ControllerPage() {
           </div>
           {me && <div className="badge">Очки: {me.score}</div>}
         </div>
+        {state?.phaseEndsAt && state?.phaseStartedAt && (
+          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Таймер стадии" />
+        )}
 
         {!me && (
           <div className="stacked-inputs">
@@ -182,6 +208,7 @@ export default function ControllerPage() {
             <button className="button-primary cta-button" onClick={joinGame} disabled={!nickname}>
               Войти в игру
             </button>
+            {joinError && <div className="alert-warning">{joinError}</div>}
           </div>
         )}
 
@@ -205,7 +232,7 @@ export default function ControllerPage() {
               Голосуйте за категорию
             </div>
             <div className="mobile-answer-grid">
-              {state.categories.map((cat) => {
+              {categoriesForVote.map((cat) => {
                 const votes = voteStats[cat.id] || 0;
                 const isMine = myVote === cat.id;
                 return (
@@ -252,7 +279,7 @@ export default function ControllerPage() {
                 Пассивно: срабатывает при первой пакости.
               </div>
             ) : (
-              <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={useAbility} disabled={abilityUses <= 0 || state?.phase !== 'question'}>
+              <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={useAbility} disabled={!canUseAbility}>
                 Использовать способность
               </button>
             )}
@@ -267,9 +294,6 @@ export default function ControllerPage() {
       {state?.phase !== 'question' && (
         <div className="mobile-card" style={{ marginTop: 16 }}>
           <div className="small-muted">Смотрите на экран: {state?.phase === 'category_pick' ? 'идёт выбор категории' : 'ожидаем следующий вопрос'}</div>
-          {state?.players?.length ? (
-            <PlayerList players={state.players || []} characters={state.characters || []} showReady={true} showScore={true} />
-          ) : null}
         </div>
       )}
     </div>
