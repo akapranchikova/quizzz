@@ -70,6 +70,8 @@ export interface PlayerState {
   eventLock?: { type: string; cleared?: boolean } | null;
   statusEffects?: { doublePoints?: boolean; eventShield?: boolean };
   preparedForQuestion?: boolean;
+  status: 'active' | 'inactive' | 'offline';
+  lastSeenAt?: number;
   lastAnswer?: AnswerRecord | null;
 }
 
