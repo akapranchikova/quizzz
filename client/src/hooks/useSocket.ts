@@ -8,7 +8,7 @@ const fallbackPort =
   typeof window !== 'undefined'
     ? import.meta.env.DEV
       ? '5174'
-      : window.location.port || ''
+      : window.location.port || '5174'
     : '5174';
 const defaultPort = portFromEnv ?? fallbackPort;
 const defaultProtocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
