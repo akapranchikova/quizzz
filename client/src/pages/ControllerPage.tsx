@@ -374,6 +374,13 @@ function ControllerInGame({
   continueNextRound,
 }: ControllerInGameProps) {
   const { phase, currentQuestion } = state;
+  const [localAnswerId, setLocalAnswerId] = useState<string | null>(null);
+  const [pressedOptionId, setPressedOptionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalAnswerId(null);
+    setPressedOptionId(null);
+  }, [currentQuestion?.id]);
 
   if (phase === 'next_round_confirm') {
     return (
@@ -450,38 +457,82 @@ function ControllerInGame({
   if (phase === 'question' && currentQuestion) {
     const timeLimitMs = (currentQuestion.timeLimitSec || 15) * 1000;
     const endsAt = state.questionStartTime ? state.questionStartTime + timeLimitMs : null;
+    const selectedOptionId = me.lastAnswer?.optionId || localAnswerId;
+    const canTapAnswer = canAnswer && !localAnswerId && !me.lastAnswer;
+
+    const handleAnswerTap = (optionId: string) => {
+      if (!canTapAnswer) return;
+      setLocalAnswerId(optionId);
+      onAnswer(optionId);
+    };
+
+    const handlePressStart = (optionId: string, disabled: boolean) => {
+      if (disabled) return;
+      setPressedOptionId(optionId);
+    };
+
+    const handlePressEnd = () => setPressedOptionId(null);
 
     return (
-      <div className="controller-stage controller-stage--flow controller-stage--stack">
-        {endsAt && state.questionStartTime && <TimerBar startsAt={state.questionStartTime} endsAt={endsAt} label="Время" />}
-        <div className="controller-stack">
-          <div className="question-title">{currentQuestion.text}</div>
-          {freezeActive && <div className="info-banner">Заморозка активна</div>}
-          {lockActive && (
-            <div className="info-banner">
-              {eventLock?.type === 'mud' ? 'Экран заляпан' : 'Лёд блокирует ответы'}
-              <button className="button-primary cta-button controller-main-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
-                Очистить
-              </button>
-            </div>
-          )}
-          <div className="mobile-answer-grid">
-            {orderedOptions.map((opt) => {
-              const disabled = !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
-              return (
-                <button
-                  key={opt.id}
-                  className={`option-button mobile-option ${me.lastAnswer?.optionId === opt.id ? 'option-selected' : ''}`}
-                  disabled={disabled}
-                  onClick={() => onAnswer(opt.id)}
-                >
-                  {opt.text}
+      <div className="controller-stage controller-stage--flow controller-stage--stack controller-question-stage">
+        {endsAt && state.questionStartTime && (
+          <TimerBar
+            startsAt={state.questionStartTime}
+            endsAt={endsAt}
+            showTimeText={false}
+            className="controller-timer timer-bar--compact"
+          />
+        )}
+        <div className="controller-question-meta">
+          {currentQuestion.text && <div className="question-hint">{currentQuestion.text}</div>}
+          <div className="controller-status-row">
+            {freezeActive && <span className="status-chip">Заморозка активна</span>}
+            {lockActive && (
+              <span className="status-chip">
+                {eventLock?.type === 'mud' ? 'Экран заляпан' : 'Лёд блокирует ответы'}
+                <button className="status-action" onClick={clearEventLock} type="button">
+                  Очистить
                 </button>
-              );
-            })}
+              </span>
+            )}
+            {info && <span className="status-chip subtle">{info}</span>}
           </div>
-          {me.lastAnswer && <div className="info-banner subtle">Ответ принят</div>}
         </div>
+        <div className="controller-answer-grid">
+          {orderedOptions.map((opt, index) => {
+            const label = String.fromCharCode(65 + index);
+            const blockedByAbility = allowedOptions && !allowedOptions.includes(opt.id);
+            const isSelected = selectedOptionId === opt.id;
+            const isPressed = pressedOptionId === opt.id;
+            const isDisabled = !canTapAnswer || Boolean(blockedByAbility);
+            const classNames = [
+              'answer-button',
+              isSelected ? 'answer-selected' : '',
+              isPressed ? 'answer-pressed' : '',
+              isDisabled ? 'answer-disabled' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+
+            return (
+              <button
+                key={opt.id}
+                className={classNames}
+                disabled={isDisabled}
+                onPointerDown={() => handlePressStart(opt.id, isDisabled)}
+                onPointerUp={handlePressEnd}
+                onPointerLeave={handlePressEnd}
+                onPointerCancel={handlePressEnd}
+                onClick={() => handleAnswerTap(opt.id)}
+                type="button"
+              >
+                <div className="answer-label">{label}</div>
+                <div className="answer-text">{opt.text}</div>
+              </button>
+            );
+          })}
+        </div>
+        {selectedOptionId && <div className="info-banner subtle">Ответ принят</div>}
       </div>
     );
   }
