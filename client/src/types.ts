@@ -2,12 +2,16 @@ export type GamePhase =
   | 'lobby'
   | 'ready'
   | 'game_start_confirm'
+  | 'round_intro'
   | 'category_select'
   | 'category_reveal'
-  | 'pre_question'
+  | 'random_event'
+  | 'ability_phase'
   | 'question'
   | 'answer_reveal'
   | 'score'
+  | 'intermission'
+  | 'mini_game'
   | 'next_round_confirm'
   | 'game_end';
 
@@ -104,4 +108,7 @@ export interface GameState {
   categoryVotes?: Record<string, string | undefined>;
   preQuestionReady?: Record<string, boolean>;
   categoryVoteStats?: Record<string, number>;
+  activeMiniGame?: { id: string; title: string; description?: string; scoring?: string } | null;
+  miniGamesRemaining?: { id: string; title: string }[];
+  miniGamesPlayed?: string[];
 }

@@ -29,6 +29,16 @@ export default function ScreenPage() {
 
   const renderPhaseContent = () => {
     switch (state?.phase) {
+      case 'round_intro':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Новый раунд</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Интро раунда" />
+            <div className="small-muted" style={{ marginTop: 6 }}>
+              Скоро выбор категории и вопрос.
+            </div>
+          </div>
+        );
       case 'lobby':
         return (
           <div className="card" style={{ marginTop: 14 }}>
@@ -94,7 +104,29 @@ export default function ScreenPage() {
             </div>
           </div>
         );
-      case 'pre_question':
+      case 'random_event':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Случайное событие</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Показ события" />
+            {state.activeEvent ? (
+              <div className="alert" style={{ marginTop: 8 }}>
+                {state.activeEvent.kind === 'malus' ? 'Пакость' : 'Баф'}: {state.activeEvent.title}
+                {state.activeEvent.targetPlayerId && (
+                  <span style={{ marginLeft: 6 }}>
+                    → цель: {players.find((p) => p.id === state.activeEvent?.targetPlayerId)?.nickname || 'случайный игрок'}
+                  </span>
+                )}
+                {state.activeEvent.description && <div className="small-muted">{state.activeEvent.description}</div>}
+              </div>
+            ) : (
+              <div className="small-muted" style={{ marginTop: 6 }}>
+                На этот раунд событие не выпало.
+              </div>
+            )}
+          </div>
+        );
+      case 'ability_phase':
         return (
           <div className="card" style={{ marginTop: 14 }}>
             <div className="section-title">Подготовка перед вопросом</div>
@@ -133,6 +165,37 @@ export default function ScreenPage() {
             <div className="section-title">Очки за раунд</div>
             <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Анимация очков" />
             <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
+          </div>
+        );
+      case 'intermission':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Перерыв перед мини-игрой</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Интермиссия" />
+            <div className="small-muted" style={{ marginTop: 6 }}>Сейчас начнётся случайная мини-игра.</div>
+            <div className="flex-row" style={{ marginTop: 8 }}>
+              {(state.miniGamesRemaining || []).map((m) => (
+                <div key={m.id} className="badge">
+                  {m.title}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case 'mini_game':
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="section-title">Мини-игра</div>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Мини-игра" />
+            {state.activeMiniGame ? (
+              <div className="alert" style={{ marginTop: 8 }}>
+                <div style={{ fontWeight: 700 }}>{state.activeMiniGame.title}</div>
+                <div className="small-muted">{state.activeMiniGame.description}</div>
+                {state.activeMiniGame.scoring && <div className="small-muted">Очки: {state.activeMiniGame.scoring}</div>}
+              </div>
+            ) : (
+              <div className="small-muted">Мини-игра выбирается сервером...</div>
+            )}
           </div>
         );
       case 'next_round_confirm':

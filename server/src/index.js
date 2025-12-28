@@ -18,15 +18,19 @@ const BASE_POINTS = 1000;
 const WRONG_PENALTY = Number(process.env.WRONG_PENALTY || 0);
 const FREEZE_DURATION_MS = 3000;
 const MIN_PLAYERS_TO_START = Number(process.env.MIN_PLAYERS_TO_START || 2);
-const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 12);
+const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 9);
 const READY_DURATION_MS = 8000;
+const ROUND_INTRO_DURATION_MS = 3200;
 const CATEGORY_PICK_DURATION_MS = 15000;
 const CATEGORY_REVEAL_DURATION_MS = 4000;
+const RANDOM_EVENT_DURATION_MS = 4500;
 const RANDOM_EVENT_CHANCE = 0.35;
-const PRE_QUESTION_DURATION_MS = 8000;
+const ABILITY_PHASE_DURATION_MS = 8000;
 const QUESTION_DURATION_FALLBACK_MS = 15000;
 const ANSWER_REVEAL_DURATION_MS = 5500;
 const SCORE_DURATION_MS = 4500;
+const INTERMISSION_DURATION_MS = 6000;
+const MINI_GAME_DURATION_MS = 9000;
 const NEXT_ROUND_CONFIRM_DURATION_MS = 8000;
 const ALL_CORRECT_BONUS_POINTS = 350;
 
@@ -69,6 +73,9 @@ const gameState = {
   activeEvent: null,
   allCorrectBonusActive: false,
   recentCategoryIds: [],
+  miniGamePool: [],
+  activeMiniGame: null,
+  miniGamesPlayed: [],
 };
 
 let phaseTimer = null;
@@ -127,6 +134,33 @@ const RANDOM_EVENTS = [
   },
 ];
 
+const MINI_GAMES = [
+  {
+    id: 'match_pairs',
+    title: 'MATCH PAIRS',
+    description: 'Собери пары логически связанных карточек',
+    scoring: '+300 за пару, +500 первому, кто закончит',
+  },
+  {
+    id: 'sort_order',
+    title: 'SORT ORDER',
+    description: 'Расставьте элементы в правильном порядке',
+    scoring: 'Идеально: +800, одна ошибка: +400',
+  },
+  {
+    id: 'find_the_odd',
+    title: 'FIND THE ODD',
+    description: 'Найдите элемент, который не подходит',
+    scoring: 'Верно: +500, иначе 0',
+  },
+  {
+    id: 'sort_to_zones',
+    title: 'SORT TO ZONES',
+    description: 'Разложите карточки по 2–3 зонам',
+    scoring: '+200 за верный элемент, +400 за идеал',
+  },
+];
+
 function getLocalIp() {
   const nets = os.networkInterfaces();
   for (const name of Object.keys(nets)) {
@@ -159,6 +193,7 @@ async function loadData() {
   gameState.questions = questionsData.questions || [];
   gameState.categoryOptions = chooseCategoryOptions();
   gameState.characters = charactersData.characters || [];
+  gameState.miniGamePool = MINI_GAMES.slice();
   for (const player of gameState.players.values()) {
     player.abilityUses = getAbilityUses(player.characterId);
   }
@@ -188,6 +223,9 @@ function resetGame(keepPlayers = true) {
   gameState.activeEvent = null;
   gameState.allCorrectBonusActive = false;
   gameState.recentCategoryIds = [];
+  gameState.miniGamePool = MINI_GAMES.slice();
+  gameState.activeMiniGame = null;
+  gameState.miniGamesPlayed = [];
   if (!keepPlayers) {
     gameState.players.clear();
   } else {
@@ -281,12 +319,16 @@ function updateNarrationForPhase(phase) {
     lobby: 'Подключение игроков',
     ready: 'Нажмите «Готов» на своих устройствах',
     game_start_confirm: 'Все готовы. Любой игрок может начать игру',
+    round_intro: `Раунд ${displayRound} начинается`,
     category_select: `Раунд ${displayRound} из ${gameState.maxRounds}: выбираем категорию`,
     category_reveal: 'Категория выбрана',
-    pre_question: 'Подготовка перед вопросом',
+    random_event: 'Случайное событие',
+    ability_phase: 'Подготовка перед вопросом',
     question: 'Вопрос: отвечайте как можно быстрее',
     answer_reveal: 'Показ правильного ответа',
     score: 'Очки летят к игрокам',
+    intermission: 'Перерыв: мини-игра на подходе',
+    mini_game: gameState.activeMiniGame ? `Мини-игра: ${gameState.activeMiniGame.title}` : 'Мини-игра',
     next_round_confirm: 'Подтвердите следующий раунд',
     game_end: 'Игра завершена',
   };
@@ -324,6 +366,10 @@ function handlePhaseTimeout(expectedPhase) {
     }
     return;
   }
+  if (expectedPhase === 'round_intro') {
+    setPhase('category_select', CATEGORY_PICK_DURATION_MS);
+    return;
+  }
   if (expectedPhase === 'category_select') {
     if (!resolveCategory()) {
       startNextRoundConfirm();
@@ -331,10 +377,14 @@ function handlePhaseTimeout(expectedPhase) {
     return;
   }
   if (expectedPhase === 'category_reveal') {
-    startPreQuestionPhase();
+    startRandomEventPhase();
     return;
   }
-  if (expectedPhase === 'pre_question') {
+  if (expectedPhase === 'random_event') {
+    startAbilityPhase();
+    return;
+  }
+  if (expectedPhase === 'ability_phase') {
     startQuestion(gameState.nextQuestion || gameState.currentQuestion);
     return;
   }
@@ -347,6 +397,14 @@ function handlePhaseTimeout(expectedPhase) {
     return;
   }
   if (expectedPhase === 'score') {
+    startIntermissionOrNextRound();
+    return;
+  }
+  if (expectedPhase === 'intermission') {
+    startMiniGame();
+    return;
+  }
+  if (expectedPhase === 'mini_game') {
     startNextRoundConfirm();
     return;
   }
@@ -446,6 +504,9 @@ function prepareForMatch() {
   gameState.activeEvent = null;
   gameState.recentCategoryIds = [];
   gameState.allCorrectBonusActive = false;
+  gameState.miniGamePool = MINI_GAMES.slice();
+  gameState.miniGamesPlayed = [];
+  gameState.activeMiniGame = null;
   gameState.categoryOptions = chooseCategoryOptions();
   for (const player of gameState.players.values()) {
     player.score = 0;
@@ -502,10 +563,10 @@ function beginRound() {
     player.preparedForQuestion = false;
     player.statusEffects = { doublePoints: false, eventShield: false };
   }
-  setPhase('category_select', CATEGORY_PICK_DURATION_MS);
+  setPhase('round_intro', ROUND_INTRO_DURATION_MS);
 }
 
-function startPreQuestionPhase() {
+function startRandomEventPhase() {
   const question = gameState.nextQuestion || (gameState.activeCategoryId ? selectQuestion(gameState.activeCategoryId) : null);
   if (!question) {
     startNextRoundConfirm();
@@ -519,15 +580,24 @@ function startPreQuestionPhase() {
   const event = pickRandomEvent();
   const targetPlayerId = event?.targetMode === 'all' ? null : pickEventTargetId();
   const payload = event ? { ...event, targetPlayerId } : null;
-  setPhase('pre_question', PRE_QUESTION_DURATION_MS, () => {
-    if (payload) {
+  if (payload) {
+    setPhase('random_event', RANDOM_EVENT_DURATION_MS, () => {
       gameState.narration = `Случайное событие: ${payload.title}`;
       gameState.activeEvent = payload;
       applyRandomEvent(payload);
-    } else {
-      gameState.activeEvent = null;
-    }
-  });
+    });
+    return;
+  }
+  gameState.activeEvent = null;
+  startAbilityPhase();
+}
+
+function startAbilityPhase() {
+  if (!gameState.currentQuestion) {
+    startNextRoundConfirm();
+    return;
+  }
+  setPhase('ability_phase', ABILITY_PHASE_DURATION_MS);
 }
 
 function syncLobbyState() {
@@ -578,6 +648,20 @@ function startScoreAnimation() {
   setPhase('score', SCORE_DURATION_MS);
 }
 
+function shouldEnterIntermission() {
+  const completedQuestions = gameState.roundNumber;
+  return (completedQuestions === 3 || completedQuestions === 6) && gameState.miniGamePool.length > 0;
+}
+
+function startIntermissionOrNextRound() {
+  if (maybeEndGame()) return;
+  if (shouldEnterIntermission()) {
+    setPhase('intermission', INTERMISSION_DURATION_MS);
+    return;
+  }
+  startNextRoundConfirm();
+}
+
 function startNextRoundConfirm() {
   if (maybeEndGame()) return;
   gameState.currentQuestion = null;
@@ -590,7 +674,32 @@ function startNextRoundConfirm() {
   gameState.activeEvent = null;
   gameState.preQuestionReady = {};
   gameState.allCorrectBonusActive = false;
+  gameState.activeMiniGame = null;
   setPhase('next_round_confirm', NEXT_ROUND_CONFIRM_DURATION_MS);
+}
+
+function pickMiniGame() {
+  if (!gameState.miniGamePool.length) return null;
+  const shuffled = [...gameState.miniGamePool].sort(() => Math.random() - 0.5);
+  return shuffled[0];
+}
+
+function startMiniGame() {
+  if (!shouldEnterIntermission() || !gameState.miniGamePool.length) {
+    startNextRoundConfirm();
+    return;
+  }
+  const miniGame = pickMiniGame();
+  if (!miniGame) {
+    startNextRoundConfirm();
+    return;
+  }
+  gameState.activeMiniGame = miniGame;
+  gameState.miniGamesPlayed = [...(gameState.miniGamesPlayed || []), miniGame.id];
+  gameState.miniGamePool = gameState.miniGamePool.filter((m) => m.id !== miniGame.id);
+  setPhase('mini_game', MINI_GAME_DURATION_MS, () => {
+    broadcastState();
+  });
 }
 
 function pickEventTargetId() {
@@ -681,6 +790,9 @@ function buildStatePayload() {
     categoryVotes: gameState.categoryVotes,
     preQuestionReady: gameState.preQuestionReady,
     categoryVoteStats: gameState.phase === 'category_select' ? {} : computeCategoryVoteStats(),
+    activeMiniGame: gameState.activeMiniGame,
+    miniGamesRemaining: gameState.miniGamePool.map((m) => ({ id: m.id, title: m.title })),
+    miniGamesPlayed: gameState.miniGamesPlayed,
   };
 }
 
@@ -736,7 +848,7 @@ function maybeEndGame() {
 }
 
 function handleAbilityUse(player, { abilityId, targetPlayerId }) {
-  if (!abilityId || !player || gameState.phase !== 'pre_question') return;
+  if (!abilityId || !player || gameState.phase !== 'ability_phase') return;
   const usesLeft = player.abilityUses?.[abilityId] ?? 0;
   if (usesLeft <= 0) return;
   const character = gameState.characters.find((c) => c.id === player.characterId);
@@ -884,7 +996,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('player:confirmPreQuestion', () => {
-    if (gameState.phase !== 'pre_question') return;
+    if (gameState.phase !== 'ability_phase') return;
     const player = gameState.players.get(socket.id);
     if (!player) return;
     markPlayerPrepared(player.id);
@@ -892,7 +1004,7 @@ io.on('connection', (socket) => {
 
   socket.on('player:useAbility', (payload) => {
     const player = gameState.players.get(socket.id);
-    if (!player || gameState.phase !== 'pre_question') return;
+    if (!player || gameState.phase !== 'ability_phase') return;
     handleAbilityUse(player, payload || {});
   });
 
