@@ -2,33 +2,20 @@ import Leaderboard from '../Leaderboard';
 import QuestionPrompt from '../QuestionPrompt';
 import QuestionResults from '../QuestionResults';
 import TimerBar from '../TimerBar';
-import { GameState, PlayerState } from '../../types';
+import { GameState } from '../../types';
 
 interface Props {
   state: GameState;
 }
 
-function answeredPlayersFor(state: GameState): (PlayerState & { isCorrect: boolean })[] {
-  const currentQuestion = state.currentQuestion;
-  if (!currentQuestion) return [];
-  if (state.phase !== 'answer_reveal' && state.phase !== 'score') return [];
-  return (state.players || [])
-    .filter((p) => p.lastAnswer)
-    .map((p) => {
-      const isCorrect = p.lastAnswer?.optionId === currentQuestion.correctOptionId;
-      return { ...p, isCorrect };
-    })
-    .sort((a, b) => Number(b.isCorrect) - Number(a.isCorrect));
-}
-
 export default function ScreenInGame({ state }: Props) {
   const players = state.players || [];
   const currentQuestion = state.currentQuestion;
-  const answeredPlayers = answeredPlayersFor(state);
 
+  const shouldShowTimer = state?.phase === 'category_select';
   const phaseTimer =
-    state?.phaseEndsAt && state?.phaseStartedAt ? (
-      <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="До следующего шага" />
+    shouldShowTimer && state?.phaseEndsAt && state?.phaseStartedAt ? (
+      <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} showTimeText={false} />
     ) : null;
 
   const renderPhaseContent = () => {
@@ -36,49 +23,50 @@ export default function ScreenInGame({ state }: Props) {
       case 'round_intro':
         return (
           <div className="phase-card">
-            <div className="phase-title">Новый раунд</div>
-            {phaseTimer}
-            <div className="phase-note">Готовьтесь к выбору категории</div>
+            <div className="hero-text">Новый раунд</div>
+            <div className="screen-message muted">Готовьтесь к выбору категории</div>
           </div>
         );
-      case 'category_select':
+      case 'category_select': {
+        const categories = (state.categoryOptions || state.categories).slice(0, 4);
         return (
-          <div className="phase-card">
-            <div className="phase-title">Выбор категории</div>
-            {phaseTimer}
-            <div className="chip-row">
-              {(state.categoryOptions || state.categories).slice(0, 4).map((cat) => (
-                <div key={cat.id} className="chip neon-edge">
+          <div className="phase-card category-select">
+            <div className="chip-row category-row">
+              {categories.map((cat) => (
+                <div key={cat.id} className="chip neon-edge category-card">
                   <span>{cat.icon || '📚'}</span>
                   <strong>{cat.title}</strong>
                 </div>
               ))}
             </div>
+            <div className="screen-message muted">Выберите категорию на своих устройствах</div>
+            {phaseTimer}
           </div>
         );
-      case 'category_reveal':
+      }
+      case 'category_reveal': {
+        const availableCategories = state.categoryOptions?.length ? state.categoryOptions : state.categories;
+        const activeCategory = availableCategories.find((cat) => cat.id === state.activeCategoryId);
         return (
           <div className="phase-card">
-            <div className="phase-title">Категория выбрана</div>
-            {phaseTimer}
             <div className="chip-grid">
-              {(state.categoryOptions?.length ? state.categoryOptions : state.categories).map((cat) => {
+              {availableCategories.map((cat) => {
                 const highlight = cat.id === state.activeCategoryId;
                 return (
-                  <div key={cat.id} className={`chip neon-edge ${highlight ? 'active' : ''}`}>
+                  <div key={cat.id} className={`chip neon-edge ${highlight ? 'active' : 'muted-chip'}`}>
                     <span>{cat.icon || '📚'}</span>
                     <strong>{cat.title}</strong>
                   </div>
                 );
               })}
             </div>
+            {activeCategory && <div className="screen-message">Выбрана категория: {activeCategory.title}</div>}
           </div>
         );
+      }
       case 'random_event':
         return (
           <div className="phase-card">
-            <div className="phase-title">Случайное событие</div>
-            {phaseTimer}
             {state.activeEvent ? (
               <div className="phase-note highlight">
                 <div className="big">{state.activeEvent.title}</div>
@@ -92,8 +80,8 @@ export default function ScreenInGame({ state }: Props) {
       case 'ability_phase':
         return (
           <div className="phase-card">
-            <div className="phase-title">Бафы и пакости</div>
-            {phaseTimer}
+            <div className="hero-text">Подготовка</div>
+            <div className="screen-message muted">Настройте способности перед вопросом</div>
             <div className="pill-row">
               {players.map((p) => (
                 <div key={p.id} className={`pill ${state.preQuestionReady?.[p.id] ? 'pill-ready' : ''}`}>
@@ -112,8 +100,6 @@ export default function ScreenInGame({ state }: Props) {
       case 'answer_reveal':
         return (
           <div className="phase-card">
-            <div className="phase-title">Результаты вопроса</div>
-            {phaseTimer}
             {currentQuestion && <QuestionResults question={currentQuestion} answerStats={state.answerStats || {}} />}
             {currentQuestion?.explanation && <div className="phase-note muted">{currentQuestion.explanation}</div>}
           </div>
@@ -121,17 +107,14 @@ export default function ScreenInGame({ state }: Props) {
       case 'score':
         return (
           <div className="phase-card">
-            <div className="phase-title">Очки за раунд</div>
-            {phaseTimer}
             <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
           </div>
         );
       case 'intermission':
         return (
           <div className="phase-card">
-            <div className="phase-title">Перерыв</div>
-            {phaseTimer}
-            <div className="phase-note">Скоро начнётся мини-игра</div>
+            <div className="hero-text">Перерыв</div>
+            <div className="screen-message muted">Скоро начнётся мини-игра</div>
             <div className="pill-row">
               {(state.miniGamesRemaining || []).map((m) => (
                 <div key={m.id} className="pill">
@@ -144,8 +127,6 @@ export default function ScreenInGame({ state }: Props) {
       case 'mini_game':
         return (
           <div className="phase-card">
-            <div className="phase-title">Мини-игра</div>
-            {phaseTimer}
             {state.activeMiniGame ? (
               <div className="phase-note highlight">
                 <div className="big">{state.activeMiniGame.title}</div>
@@ -160,15 +141,14 @@ export default function ScreenInGame({ state }: Props) {
       case 'next_round_confirm':
         return (
           <div className="phase-card">
-            <div className="phase-title">Продолжаем?</div>
-            {phaseTimer}
-            <div className="phase-note">Любой игрок может начать следующий раунд</div>
+            <div className="hero-text">Готовы продолжить</div>
+            <div className="screen-message muted">Любой игрок может начать следующий раунд</div>
           </div>
         );
       case 'game_end':
         return (
           <div className="phase-card">
-            <div className="phase-title">Игра завершена</div>
+            <div className="hero-text">Игра завершена</div>
             <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
           </div>
         );
@@ -181,32 +161,6 @@ export default function ScreenInGame({ state }: Props) {
     <div className="screen-stack">
       {state.narration ? <div className="narration">{state.narration}</div> : null}
       {renderPhaseContent()}
-      {answeredPlayers.length > 0 && (
-        <div className="phase-card">
-          <div className="phase-title">Ответы</div>
-          <div className="answer-grid">
-            {answeredPlayers.map((p) => (
-              <div key={p.id} className={`answer-chip ${p.isCorrect ? 'correct' : ''}`}>
-                <div className="answer-name">{p.nickname}</div>
-                <div className="answer-meta">
-                  {p.isCorrect ? `+${p.lastAnswer?.pointsEarned || 0} очков` : 'мимо'}
-                  {currentQuestion ? (
-                    <span className="muted">
-                      {currentQuestion.options.find((o) => o.id === p.lastAnswer?.optionId)?.text || '—'}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {state?.leaderboard?.length && state?.phase !== 'score' && state?.phase !== 'game_end' ? (
-        <div className="phase-card">
-          <div className="phase-title">Лидеры</div>
-          <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
-        </div>
-      ) : null}
     </div>
   );
 }

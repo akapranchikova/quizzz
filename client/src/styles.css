@@ -272,11 +272,18 @@ button {
 }
 
 .question-block {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  border: none;
   border-radius: 16px;
-  padding: 16px;
-  margin: 12px 0;
+  padding: 0;
+  margin: 20px 0 8px;
+  text-align: center;
+}
+
+.question-text {
+  font-size: clamp(26px, 3.4vw, 40px);
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .answers-grid {
@@ -713,6 +720,17 @@ button {
   transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
+.hero-text {
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.screen-message {
+  font-size: 15px;
+  margin-top: 10px;
+}
+
 .phase-title {
   font-size: 24px;
   font-weight: 800;
@@ -768,6 +786,27 @@ button {
 .chip.active {
   border-color: #22d3ee;
   box-shadow: 0 0 24px rgba(34, 211, 238, 0.45);
+}
+
+.muted-chip {
+  opacity: 0.65;
+  filter: grayscale(0.2);
+}
+
+.category-select {
+  align-items: center;
+}
+
+.category-row {
+  justify-content: center;
+  gap: 14px;
+}
+
+.category-card {
+  min-width: 200px;
+  justify-content: center;
+  font-size: 18px;
+  padding: 14px 16px;
 }
 
 .chip-grid {
