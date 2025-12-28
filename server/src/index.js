@@ -19,6 +19,7 @@ const WRONG_PENALTY = Number(process.env.WRONG_PENALTY || 0);
 const FREEZE_DURATION_MS = 3000;
 const MIN_PLAYERS_TO_START = Number(process.env.MIN_PLAYERS_TO_START || 2);
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 9);
+const MAX_PLAYERS = Number(process.env.MAX_PLAYERS || 8);
 const READY_DURATION_MS = 8000;
 const ROUND_INTRO_DURATION_MS = 3200;
 const CATEGORY_PICK_DURATION_MS = 15000;
@@ -751,6 +752,18 @@ function applyRandomEvent(payload) {
   broadcastState();
 }
 
+function buildControllerUrl() {
+  if (process.env.PUBLIC_CONTROLLER_URL) {
+    return process.env.PUBLIC_CONTROLLER_URL;
+  }
+  if (process.env.PUBLIC_HOST) {
+    const protocol = process.env.PUBLIC_PROTOCOL || 'http';
+    const port = process.env.PUBLIC_PORT ? `:${process.env.PUBLIC_PORT}` : '';
+    return `${protocol}://${process.env.PUBLIC_HOST}${port}/controller`;
+  }
+  return null;
+}
+
 function buildStatePayload() {
   return {
     phase: gameState.phase,
@@ -793,6 +806,8 @@ function buildStatePayload() {
     activeMiniGame: gameState.activeMiniGame,
     miniGamesRemaining: gameState.miniGamePool.map((m) => ({ id: m.id, title: m.title })),
     miniGamesPlayed: gameState.miniGamesPlayed,
+    controllerUrl: buildControllerUrl(),
+    maxPlayers: MAX_PLAYERS,
   };
 }
 
