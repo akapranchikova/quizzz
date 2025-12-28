@@ -257,36 +257,38 @@ interface ControllerJoinProps {
 
 function ControllerJoin({ characters, nickname, characterId, onNicknameChange, onCharacterChange, onJoin, error }: ControllerJoinProps) {
   return (
-    <div className="controller-card">
+    <div className="controller-stage controller-stage--flow controller-stage--stack">
       <div className="controller-title">Войти</div>
-      <div className="character-grid">
-        {characters.map((character) => (
-          <button
-            key={character.id}
-            type="button"
-            className={`character-tile ${characterId === character.id ? 'selected' : ''}`}
-            onClick={() => onCharacterChange(character.id)}
-          >
-            <div className="character-icon">{character.icon || '✨'}</div>
-            <div className="character-name">{character.name}</div>
+      <div className="controller-stack">
+        <div className="character-grid">
+          {characters.map((character) => (
+            <button
+              key={character.id}
+              type="button"
+              className={`character-tile ${characterId === character.id ? 'selected' : ''}`}
+              onClick={() => onCharacterChange(character.id)}
+            >
+              <div className="character-icon">{character.icon || '✨'}</div>
+              <div className="character-name">{character.name}</div>
+            </button>
+          ))}
+        </div>
+        <div className="stacked-inputs">
+          <input className="input" value={nickname} onChange={(e) => onNicknameChange(e.target.value)} placeholder="Имя" />
+          <button className="button-primary cta-button primary-action controller-main-button" onClick={onJoin} disabled={!nickname}>
+            Войти
           </button>
-        ))}
+        </div>
+        {error && <div className="alert-warning">{error}</div>}
       </div>
-      <div className="stacked-inputs" style={{ marginTop: 12 }}>
-        <input className="input" value={nickname} onChange={(e) => onNicknameChange(e.target.value)} placeholder="Имя" />
-        <button className="button-primary cta-button primary-action" onClick={onJoin} disabled={!nickname}>
-          Войти
-        </button>
-      </div>
-      {error && <div className="alert-warning" style={{ marginTop: 10 }}>{error}</div>}
     </div>
   );
 }
 
 function ControllerReadyButton({ onReady, disabled }: { onReady: () => void; disabled?: boolean }) {
   return (
-    <div className="controller-card controller-centered">
-      <button className="button-primary primary-action" onClick={onReady} disabled={disabled}>
+    <div className="controller-stage controller-centered">
+      <button className="button-primary primary-action controller-main-button" onClick={onReady} disabled={disabled}>
         Готов
       </button>
     </div>
@@ -295,7 +297,7 @@ function ControllerReadyButton({ onReady, disabled }: { onReady: () => void; dis
 
 function ControllerWaitStart() {
   return (
-    <div className="controller-card controller-centered">
+    <div className="controller-stage controller-centered">
       <div className="wait-text">Ждём старт…</div>
     </div>
   );
@@ -303,15 +305,17 @@ function ControllerWaitStart() {
 
 function ControllerStartButton({ onStart }: { onStart: () => void }) {
   return (
-    <div className="controller-card controller-centered start-wrapper">
-      <div className="start-ring">
-        <svg viewBox="0 0 200 200" className="start-ring-svg" aria-hidden="true">
-          <circle cx="100" cy="100" r="92" />
-        </svg>
+    <div className="controller-stage controller-centered">
+      <div className="start-wrapper">
+        <div className="start-ring">
+          <svg viewBox="0 0 200 200" className="start-ring-svg" aria-hidden="true">
+            <circle cx="100" cy="100" r="92" />
+          </svg>
+        </div>
+        <button className="start-button" onClick={onStart} aria-label="Начать игру" type="button">
+          <span>Начать</span>
+        </button>
       </div>
-      <button className="start-button" onClick={onStart} aria-label="Начать игру" type="button">
-        <span>Начать</span>
-      </button>
     </div>
   );
 }
@@ -373,8 +377,8 @@ function ControllerInGame({
 
   if (phase === 'next_round_confirm') {
     return (
-      <div className="controller-card controller-centered">
-        <button className="button-primary primary-action" onClick={continueNextRound}>
+      <div className="controller-stage controller-centered">
+        <button className="button-primary primary-action controller-main-button" onClick={continueNextRound}>
           Продолжить
         </button>
       </div>
@@ -383,27 +387,27 @@ function ControllerInGame({
 
   if (phase === 'category_select') {
     return (
-      <div className="controller-card">
+      <div className="controller-stage controller-stage--flow controller-stage--stack">
         {state.phaseStartedAt && state.phaseEndsAt && (
           <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Выбор категории" />
         )}
-        <div className="controller-title" style={{ marginTop: 12 }}>
-          Выберите категорию
-        </div>
-        <div className="mobile-answer-grid">
-          {categoriesForVote.map((cat) => {
-            const isMine = myVote === cat.id;
-            return (
-              <button
-                key={cat.id}
-                className={`option-button mobile-option ${isMine ? 'option-selected' : ''}`}
-                onClick={() => voteForCategory(cat.id)}
-                disabled={phase !== 'category_select'}
-              >
-                <div className="option-title">{cat.icon || '📚'} {cat.title}</div>
-              </button>
-            );
-          })}
+        <div className="controller-stack">
+          <div className="controller-title">Выберите категорию</div>
+          <div className="mobile-answer-grid">
+            {categoriesForVote.map((cat) => {
+              const isMine = myVote === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  className={`option-button mobile-option ${isMine ? 'option-selected' : ''}`}
+                  onClick={() => voteForCategory(cat.id)}
+                  disabled={phase !== 'category_select'}
+                >
+                  <div className="option-title">{cat.icon || '📚'} {cat.title}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -411,7 +415,7 @@ function ControllerInGame({
 
   if (phase === 'ability_phase') {
     return (
-      <div className="controller-card">
+      <div className="controller-stage controller-stage--flow controller-stage--stack">
         <div className="controller-title">Подготовка</div>
         <div className="ability-card mobile-ability">
           <div className="ability-name">{ability ? ability.name : 'Способности недоступны'}</div>
@@ -429,11 +433,11 @@ function ControllerInGame({
           )}
           <div className="stacked-inputs" style={{ marginTop: 12 }}>
             {ability && ability.id !== 'shield' && (
-              <button className="button-primary cta-button" onClick={applyAbilityAndConfirm} disabled={preparedForQuestion || abilityUses <= 0}>
+              <button className="button-primary cta-button controller-main-button" onClick={applyAbilityAndConfirm} disabled={preparedForQuestion || abilityUses <= 0}>
                 Применить
               </button>
             )}
-            <button className="button-primary cta-button" onClick={confirmPreQuestion} disabled={preparedForQuestion}>
+            <button className="button-primary cta-button controller-main-button" onClick={confirmPreQuestion} disabled={preparedForQuestion}>
               {preparedForQuestion ? 'Готово' : 'Пропустить'}
             </button>
           </div>
@@ -448,41 +452,43 @@ function ControllerInGame({
     const endsAt = state.questionStartTime ? state.questionStartTime + timeLimitMs : null;
 
     return (
-      <div className="controller-card">
+      <div className="controller-stage controller-stage--flow controller-stage--stack">
         {endsAt && state.questionStartTime && <TimerBar startsAt={state.questionStartTime} endsAt={endsAt} label="Время" />}
-        <div className="question-title">{currentQuestion.text}</div>
-        {freezeActive && <div className="info-banner">Заморозка активна</div>}
-        {lockActive && (
-          <div className="info-banner">
-            {eventLock?.type === 'mud' ? 'Экран заляпан' : 'Лёд блокирует ответы'}
-            <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
-              Очистить
-            </button>
-          </div>
-        )}
-        <div className="mobile-answer-grid">
-          {orderedOptions.map((opt) => {
-            const disabled = !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
-            return (
-              <button
-                key={opt.id}
-                className={`option-button mobile-option ${me.lastAnswer?.optionId === opt.id ? 'option-selected' : ''}`}
-                disabled={disabled}
-                onClick={() => onAnswer(opt.id)}
-              >
-                {opt.text}
+        <div className="controller-stack">
+          <div className="question-title">{currentQuestion.text}</div>
+          {freezeActive && <div className="info-banner">Заморозка активна</div>}
+          {lockActive && (
+            <div className="info-banner">
+              {eventLock?.type === 'mud' ? 'Экран заляпан' : 'Лёд блокирует ответы'}
+              <button className="button-primary cta-button controller-main-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
+                Очистить
               </button>
-            );
-          })}
+            </div>
+          )}
+          <div className="mobile-answer-grid">
+            {orderedOptions.map((opt) => {
+              const disabled = !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
+              return (
+                <button
+                  key={opt.id}
+                  className={`option-button mobile-option ${me.lastAnswer?.optionId === opt.id ? 'option-selected' : ''}`}
+                  disabled={disabled}
+                  onClick={() => onAnswer(opt.id)}
+                >
+                  {opt.text}
+                </button>
+              );
+            })}
+          </div>
+          {me.lastAnswer && <div className="info-banner subtle">Ответ принят</div>}
         </div>
-        {me.lastAnswer && <div className="info-banner subtle">Ответ принят</div>}
       </div>
     );
   }
 
   if (phase === 'answer_reveal' || phase === 'score') {
     return (
-      <div className="controller-card controller-centered">
+      <div className="controller-stage controller-centered">
         <div className="wait-text">Ответ принят</div>
         {info && <div className="info-banner" style={{ marginTop: 8 }}>{info}</div>}
       </div>
@@ -490,7 +496,7 @@ function ControllerInGame({
   }
 
   return (
-    <div className="controller-card controller-centered">
+    <div className="controller-stage controller-centered">
       <div className="wait-text">Смотрите на экран</div>
       {activeEvent && <div className="info-banner" style={{ marginTop: 10 }}>{activeEvent.title}</div>}
     </div>
