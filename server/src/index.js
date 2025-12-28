@@ -33,14 +33,24 @@ const io = new Server(server, {
   },
 });
 
+const CATEGORY_PICK_DURATION_MS = 15000;
+const CATEGORY_REVEAL_DURATION_MS = 4000;
+const ABILITY_DURATION_MS = 7000;
+const REVEAL_DURATION_MS = 5000;
+const ROUND_INTERVAL_MS = 10000;
+
 const gameState = {
   phase: 'lobby',
+  phaseStartedAt: null,
+  phaseEndsAt: null,
+  activeCategoryId: null,
   categories: [],
   characters: [],
   players: new Map(),
   hostPlayerId: null,
   usedQuestionIds: new Set(),
   currentQuestion: null,
+  nextQuestion: null,
   questionStartTime: null,
   answers: {},
   answerStats: {},
@@ -48,7 +58,7 @@ const gameState = {
   categoryVotes: {},
 };
 
-let revealTimer = null;
+let phaseTimer = null;
 
 function getLocalIp() {
   const nets = os.networkInterfaces();
@@ -90,9 +100,14 @@ async function loadData() {
 
 function resetGame(keepPlayers = true) {
   clearRevealTimer();
+  clearPhaseTimer();
   gameState.phase = 'lobby';
+  gameState.phaseStartedAt = null;
+  gameState.phaseEndsAt = null;
+  gameState.activeCategoryId = null;
   gameState.usedQuestionIds = new Set();
   gameState.currentQuestion = null;
+  gameState.nextQuestion = null;
   gameState.questionStartTime = null;
   gameState.answers = {};
   gameState.answerStats = {};
@@ -115,6 +130,13 @@ function clearRevealTimer() {
   if (revealTimer) {
     clearTimeout(revealTimer);
     revealTimer = null;
+  }
+}
+
+function clearPhaseTimer() {
+  if (phaseTimer) {
+    clearTimeout(phaseTimer);
+    phaseTimer = null;
   }
 }
 
@@ -157,6 +179,55 @@ function computeCategoryVoteStats() {
   return stats;
 }
 
+function setPhase(phase, durationMs = null, onEnter = null) {
+  clearPhaseTimer();
+  gameState.phase = phase;
+  const now = Date.now();
+  gameState.phaseStartedAt = now;
+  gameState.phaseEndsAt = durationMs ? now + durationMs : null;
+  if (onEnter) {
+    onEnter();
+  }
+  broadcastState();
+  if (durationMs) {
+    phaseTimer = setTimeout(() => handlePhaseTimeout(phase), durationMs);
+  }
+}
+
+function handlePhaseTimeout(expectedPhase) {
+  if (gameState.phase !== expectedPhase) return;
+  if (expectedPhase === 'category_pick') {
+    if (!resolveCategory()) {
+      setPhase('category_pick', CATEGORY_PICK_DURATION_MS);
+    }
+    return;
+  }
+  if (expectedPhase === 'category_reveal') {
+    startAbilityPhase();
+    return;
+  }
+  if (expectedPhase === 'ability') {
+    startQuestion(gameState.nextQuestion);
+    return;
+  }
+  if (expectedPhase === 'question') {
+    revealQuestion();
+    return;
+  }
+  if (expectedPhase === 'reveal') {
+    if (!maybeEndGame()) {
+      startRoundInterval();
+    }
+    return;
+  }
+  if (expectedPhase === 'round_end') {
+    setPhase('category_pick', CATEGORY_PICK_DURATION_MS, () => {
+      gameState.activeCategoryId = null;
+      gameState.categoryVotes = {};
+    });
+  }
+}
+
 function chooseCategoryFromVotes() {
   const stats = computeCategoryVoteStats();
   const entries = Object.entries(stats);
@@ -164,6 +235,23 @@ function chooseCategoryFromVotes() {
   const maxVotes = Math.max(...entries.map(([, count]) => count));
   const contenders = entries.filter(([, count]) => count === maxVotes).map(([id]) => id);
   return contenders[Math.floor(Math.random() * contenders.length)];
+}
+
+function resolveCategory() {
+  const pickedVotes = chooseCategoryFromVotes();
+  const categoryId =
+    pickedVotes ||
+    (gameState.categories.length
+      ? gameState.categories[Math.floor(Math.random() * gameState.categories.length)].id
+      : null);
+  if (!categoryId) return false;
+  const question = selectQuestion(categoryId);
+  if (!question) return false;
+  gameState.activeCategoryId = categoryId;
+  gameState.nextQuestion = question;
+  gameState.usedQuestionIds.add(question.id);
+  setPhase('category_reveal', CATEGORY_REVEAL_DURATION_MS);
+  return true;
 }
 
 function haveAllPlayersVoted() {
@@ -174,13 +262,7 @@ function haveAllPlayersVoted() {
 function startRoundFromVotes(requireAllVotes = false) {
   if (gameState.phase !== 'category_pick') return false;
   if (requireAllVotes && !haveAllPlayersVoted()) return false;
-  const categoryId = chooseCategoryFromVotes();
-  if (!categoryId) return false;
-  const question = selectQuestion(categoryId);
-  if (!question) return false;
-  gameState.usedQuestionIds.add(question.id);
-  startQuestion(question);
-  return true;
+  return resolveCategory();
 }
 
 function selectQuestion(categoryId) {
@@ -196,24 +278,41 @@ function broadcastState() {
   io.emit('server:state', buildStatePayload());
 }
 
+function startAbilityPhase() {
+  const question = gameState.nextQuestion || (gameState.activeCategoryId ? selectQuestion(gameState.activeCategoryId) : null);
+  if (!question) {
+    startRoundInterval();
+    return;
+  }
+  gameState.currentQuestion = question;
+  gameState.questionStartTime = null;
+  gameState.answers = {};
+  gameState.answerStats = {};
+  setPhase('ability', ABILITY_DURATION_MS);
+}
+
 function beginGame() {
-  gameState.phase = 'category_pick';
+  clearRevealTimer();
+  clearPhaseTimer();
   gameState.usedQuestionIds = new Set();
   gameState.leaderboard = [];
   gameState.currentQuestion = null;
+  gameState.nextQuestion = null;
   gameState.questionStartTime = null;
   gameState.answers = {};
   gameState.answerStats = {};
   gameState.categoryVotes = {};
-  clearRevealTimer();
-  broadcastState();
+  gameState.activeCategoryId = null;
+  setPhase('category_pick', CATEGORY_PICK_DURATION_MS);
 }
 
 function startQuestion(question) {
   clearRevealTimer();
-  if (!question) return;
+  if (!question) {
+    setPhase('round_end', ROUND_INTERVAL_MS);
+    return;
+  }
   gameState.currentQuestion = question;
-  gameState.phase = 'question';
   gameState.questionStartTime = Date.now();
   gameState.answers = {};
   gameState.answerStats = {};
@@ -223,17 +322,27 @@ function startQuestion(question) {
   }
   io.emit('server:question', sanitizeQuestion(question, 'question'));
   const limitMs = (question.timeLimitSec || 15) * 1000;
-  revealTimer = setTimeout(() => {
-    if (gameState.phase === 'question') {
-      revealQuestion();
-    }
-  }, limitMs + 200);
-  broadcastState();
+  setPhase('question', limitMs);
+}
+
+function startRoundInterval() {
+  setPhase('round_end', ROUND_INTERVAL_MS, () => {
+    gameState.currentQuestion = null;
+    gameState.nextQuestion = null;
+    gameState.questionStartTime = null;
+    gameState.answers = {};
+    gameState.answerStats = {};
+    gameState.activeCategoryId = null;
+    gameState.categoryVotes = {};
+  });
 }
 
 function buildStatePayload() {
   return {
     phase: gameState.phase,
+    phaseStartedAt: gameState.phaseStartedAt,
+    phaseEndsAt: gameState.phaseEndsAt,
+    activeCategoryId: gameState.activeCategoryId,
     categories: gameState.categories,
     characters: gameState.characters,
     players: Array.from(gameState.players.values()).map((p) => ({
@@ -251,12 +360,12 @@ function buildStatePayload() {
     preferredHost,
     currentQuestion: sanitizeQuestion(gameState.currentQuestion, gameState.phase),
     questionStartTime: gameState.questionStartTime,
-    answerStats: gameState.answerStats,
+    answerStats: gameState.phase === 'reveal' ? gameState.answerStats : {},
     leaderboard: gameState.leaderboard,
     usedQuestionCount: gameState.usedQuestionIds.size,
     totalQuestions: (gameState.questions || []).length,
     categoryVotes: gameState.categoryVotes,
-    categoryVoteStats: computeCategoryVoteStats(),
+    categoryVoteStats: gameState.phase === 'category_pick' ? {} : computeCategoryVoteStats(),
   };
 }
 
@@ -278,15 +387,13 @@ function revealQuestion() {
     }
   }
   computeLeaderboard();
-  gameState.phase = 'reveal';
-  broadcastState();
+  setPhase('reveal', REVEAL_DURATION_MS);
 }
 
 function maybeEndGame() {
   const allUsed = gameState.usedQuestionIds.size >= (gameState.questions || []).length;
   if (allUsed) {
-    gameState.phase = 'game_end';
-    broadcastState();
+    setPhase('game_end');
     return true;
   }
   return false;
@@ -355,6 +462,11 @@ io.on('connection', (socket) => {
       callback?.({ ok: false, error: 'Nickname required' });
       return;
     }
+    const exists = Array.from(gameState.players.values()).some((p) => p.nickname.toLowerCase() === nickname.toLowerCase());
+    if (exists) {
+      callback?.({ ok: false, error: 'Такой игрок уже есть' });
+      return;
+    }
     const player = {
       id: socket.id,
       socketId: socket.id,
@@ -408,7 +520,7 @@ io.on('connection', (socket) => {
 
   socket.on('player:useAbility', (payload) => {
     const player = gameState.players.get(socket.id);
-    if (!player || gameState.phase !== 'question') return;
+    if (!player || (gameState.phase !== 'question' && gameState.phase !== 'ability')) return;
     handleAbilityUse(player, payload || {});
   });
 
@@ -429,8 +541,10 @@ io.on('connection', (socket) => {
     if (gameState.phase !== 'category_pick') return;
     const question = selectQuestion(categoryId);
     if (!question) return;
+    gameState.activeCategoryId = categoryId;
+    gameState.nextQuestion = question;
     gameState.usedQuestionIds.add(question.id);
-    startQuestion(question);
+    setPhase('category_reveal', CATEGORY_REVEAL_DURATION_MS);
   });
 
   socket.on('admin:next', () => {
@@ -438,19 +552,21 @@ io.on('connection', (socket) => {
       revealQuestion();
     } else if (gameState.phase === 'reveal') {
       if (!maybeEndGame()) {
-        gameState.phase = 'category_pick';
-        gameState.currentQuestion = null;
-        gameState.questionStartTime = null;
-        gameState.answers = {};
-        gameState.answerStats = {};
-        gameState.categoryVotes = {};
-        clearRevealTimer();
-        broadcastState();
+        startRoundInterval();
       }
     } else if (gameState.phase === 'category_pick') {
       if (!startRoundFromVotes(false)) {
         broadcastState();
       }
+    } else if (gameState.phase === 'category_reveal') {
+      startAbilityPhase();
+    } else if (gameState.phase === 'ability') {
+      startQuestion(gameState.nextQuestion);
+    } else if (gameState.phase === 'round_end') {
+      setPhase('category_pick', CATEGORY_PICK_DURATION_MS, () => {
+        gameState.activeCategoryId = null;
+        gameState.categoryVotes = {};
+      });
     }
   });
 

@@ -1,6 +1,8 @@
 import PlayerList from '../components/PlayerList';
-import QuestionPanel from '../components/QuestionPanel';
 import Leaderboard from '../components/Leaderboard';
+import QuestionPrompt from '../components/QuestionPrompt';
+import QuestionResults from '../components/QuestionResults';
+import TimerBar from '../components/TimerBar';
 import { useSocket } from '../hooks/useSocket';
 
 export default function AdminPage() {
@@ -38,6 +40,11 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+        {state?.phaseEndsAt && state?.phaseStartedAt && (
+          <div style={{ marginTop: 8 }}>
+            <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Таймер стадии" />
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
@@ -65,13 +72,16 @@ export default function AdminPage() {
         <PlayerList players={state?.players || []} characters={state?.characters || []} showReady showScore />
       </div>
 
-      {(state?.phase === 'question' || state?.phase === 'reveal') && state.currentQuestion && (
-        <QuestionPanel
-          question={state.currentQuestion}
-          phase={state.phase === 'question' ? 'question' : 'reveal'}
-          questionStartTime={state.questionStartTime}
-          answerStats={state.answerStats}
-        />
+      {state?.phase === 'question' && state.currentQuestion && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <QuestionPrompt question={state.currentQuestion} questionStartTime={state.questionStartTime} />
+        </div>
+      )}
+      {state?.phase === 'reveal' && state.currentQuestion && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="section-title">Результаты вопроса</div>
+          <QuestionResults question={state.currentQuestion} answerStats={state.answerStats} />
+        </div>
       )}
 
       {state?.leaderboard?.length ? (
