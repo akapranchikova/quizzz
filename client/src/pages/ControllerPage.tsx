@@ -28,7 +28,7 @@ export default function ControllerPage() {
   const myCharacter = state?.characters.find((c) => c.id === (me?.characterId || characterId));
   const ability: Ability | undefined = myCharacter?.ability;
   const abilityUses = me?.abilityUses?.[ability?.id || ''] ?? ability?.usesPerGame ?? 0;
-  const canUseAbility = abilityUses > 0 && state?.phase === 'pre_question';
+  const canUseAbility = abilityUses > 0 && state?.phase === 'ability_phase';
   const hasAnswered = Boolean(me?.lastAnswer);
   const preparedForQuestion = me ? Boolean(state?.preQuestionReady?.[me.id] || me.preparedForQuestion) : false;
 
@@ -96,7 +96,6 @@ export default function ControllerPage() {
     setOptionOrder(null);
     setFreezeUntil(0);
     setInfo('');
-    setPendingCategoryId('');
     setActiveEvent(null);
   }, [state?.currentQuestion?.id, state?.phase]);
 
@@ -147,12 +146,12 @@ export default function ControllerPage() {
   };
 
   const confirmPreQuestion = () => {
-    if (!socket || state?.phase !== 'pre_question') return;
+    if (!socket || state?.phase !== 'ability_phase') return;
     socket.emit('player:confirmPreQuestion');
   };
 
   const useAbility = () => {
-    if (!ability || abilityUses <= 0 || state?.phase !== 'pre_question') return false;
+    if (!ability || abilityUses <= 0 || state?.phase !== 'ability_phase') return false;
     if (ability.id === 'shuffle_enemy' || ability.id === 'freeze_enemy') {
       if (!targetPlayerId) {
         setInfo('Выберите цель для способности.');
@@ -227,7 +226,11 @@ export default function ControllerPage() {
         return 'Выбираем категорию. Итоги сразу после голосов.';
       case 'category_reveal':
         return 'Категория выбрана. Готовимся.';
-      case 'pre_question':
+      case 'round_intro':
+        return 'Новый раунд сейчас начнётся.';
+      case 'random_event':
+        return 'Случайное событие — смотрите на экран.';
+      case 'ability_phase':
         return 'Бафы и пакости только сейчас — решайте.';
       case 'question':
         return 'Отвечайте быстрее на вопрос!';
@@ -235,6 +238,10 @@ export default function ControllerPage() {
         return 'Смотрите результаты на экране.';
       case 'score':
         return 'Очки начисляются...';
+      case 'intermission':
+        return 'Перерыв перед мини-игрой.';
+      case 'mini_game':
+        return 'Сервер запускает мини-игру.';
       case 'next_round_confirm':
         return 'Любой игрок может начать следующий раунд.';
       default:
@@ -344,7 +351,7 @@ export default function ControllerPage() {
           </div>
         )}
 
-        {me && state?.phase === 'pre_question' && (
+        {me && state?.phase === 'ability_phase' && (
           <div className="ability-card mobile-ability">
             <div style={{ fontWeight: 700 }}>{ability ? ability.name : 'Подготовка к вопросу'}</div>
             <div className="small-muted">{ability ? ability.description : 'Бафы и пакости применяются только сейчас.'}</div>
@@ -406,11 +413,13 @@ export default function ControllerPage() {
               ? 'Идёт выбор категории'
               : state?.phase === 'game_start_confirm'
                 ? 'Ждём, кто нажмёт «Начать»'
-                : state?.phase === 'pre_question'
+                : state?.phase === 'ability_phase'
                   ? 'Окно способностей перед вопросом'
                   : state?.phase === 'next_round_confirm'
                     ? 'Подтвердите продолжение раунда'
-                    : 'Смотрите на экран: скоро следующий вопрос'}
+                    : state?.phase === 'intermission'
+                      ? 'Мини-игра начинается на экране'
+                      : 'Смотрите на экран: скоро следующий вопрос'}
           </div>
         </div>
       )}
