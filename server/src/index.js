@@ -59,6 +59,7 @@ const gameState = {
 };
 
 let phaseTimer = null;
+let revealTimer = null;
 
 function getLocalIp() {
   const nets = os.networkInterfaces();
