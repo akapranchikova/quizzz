@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
-import { Ability, ActiveEvent, QuestionOption } from '../types';
+import { Ability, ActiveEvent, Category, Character, GameState, PlayerState, QuestionOption } from '../types';
 import TimerBar from '../components/TimerBar';
 
 function reorderOptions(options: QuestionOption[], order?: string[] | null) {
@@ -10,6 +10,8 @@ function reorderOptions(options: QuestionOption[], order?: string[] | null) {
   const remaining = options.filter((o) => !order.includes(o.id));
   return [...mapped, ...remaining];
 }
+
+type ControllerMode = 'join' | 'ready' | 'wait_start' | 'start' | 'in_game';
 
 export default function ControllerPage() {
   const { socket, state, connected } = useSocket();
@@ -169,85 +171,9 @@ export default function ControllerPage() {
     }
   };
 
-  const renderQuestion = () => {
-    if (!currentQuestion || state?.phase !== 'question') return null;
-    const timeLimitMs = (currentQuestion.timeLimitSec || 15) * 1000;
-    const endsAt = state.questionStartTime ? state.questionStartTime + timeLimitMs : null;
-    return (
-      <div className="mobile-card" style={{ marginTop: 16 }}>
-        <p className="question-title">{currentQuestion.text}</p>
-        {endsAt && state.questionStartTime && <TimerBar startsAt={state.questionStartTime} endsAt={endsAt} label="Время на ответ" />}
-        {freezeActive && (
-          <div className="alert-warning" style={{ marginBottom: 8, padding: 10 }}>Заморозка активна</div>
-        )}
-        {lockActive && (
-          <div className="alert-warning" style={{ marginBottom: 8, padding: 10 }}>
-            {eventLock?.type === 'mud' ? 'Ответы заляпаны — очистите экран' : 'Лёд блокирует ответы'}
-            <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
-              Очистить/разбить
-            </button>
-          </div>
-        )}
-        <div className="mobile-answer-grid">
-          {orderedOptions.map((opt) => {
-            const disabled = !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
-            return (
-              <button
-                key={opt.id}
-                className="option-button mobile-option"
-                disabled={disabled}
-                onClick={() => onAnswer(opt.id)}
-                style={{
-                  borderColor: me?.lastAnswer?.optionId === opt.id ? '#22d3ee' : undefined,
-                  opacity: allowedOptions && !allowedOptions.includes(opt.id) ? 0.4 : undefined,
-                }}
-              >
-                {opt.text}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   const otherPlayers = useMemo(() => state?.players.filter((p) => p.id !== me?.id) || [], [state?.players, me]);
   const myVote = me?.id ? state?.categoryVotes?.[me.id] : undefined;
-  const voteStats = state?.categoryVoteStats || {};
   const categoriesForVote = (state?.categoryOptions?.length ? state.categoryOptions : state?.categories || []).slice(0, 4);
-
-  const statusMessage = () => {
-    switch (state?.phase) {
-      case 'ready':
-        return 'Нажмите «Готов», как только будете на связи.';
-      case 'game_start_confirm':
-        return 'Все подтвердили. Любой игрок может начать игру.';
-      case 'category_select':
-        return 'Выбираем категорию. Итоги сразу после голосов.';
-      case 'category_reveal':
-        return 'Категория выбрана. Готовимся.';
-      case 'round_intro':
-        return 'Новый раунд сейчас начнётся.';
-      case 'random_event':
-        return 'Случайное событие — смотрите на экран.';
-      case 'ability_phase':
-        return 'Бафы и пакости только сейчас — решайте.';
-      case 'question':
-        return 'Отвечайте быстрее на вопрос!';
-      case 'answer_reveal':
-        return 'Смотрите результаты на экране.';
-      case 'score':
-        return 'Очки начисляются...';
-      case 'intermission':
-        return 'Перерыв перед мини-игрой.';
-      case 'mini_game':
-        return 'Сервер запускает мини-игру.';
-      case 'next_round_confirm':
-        return 'Любой игрок может начать следующий раунд.';
-      default:
-        return 'Ждём остальных игроков и старт';
-    }
-  };
 
   const voteForCategory = (categoryId: string) => {
     if (!me || !socket || state?.phase !== 'category_select') return;
@@ -259,170 +185,314 @@ export default function ControllerPage() {
     socket.emit('player:clearEventLock');
   };
 
-  return (
-    <div className="controller-shell">
-      <div className="mobile-card">
-        <div className="status-line">
-          <div className="status-pill">
-            <span>{connected ? 'Подключено' : 'Ожидание соединения'}</span>
-            {state?.phase && <span className="badge">Стадия: {state.phase}</span>}
-          </div>
-          {me && <div className="badge">Очки: {me.score}</div>}
-        </div>
-        {state?.phaseEndsAt && state?.phaseStartedAt && (
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Таймер стадии" />
-        )}
-        {activeEvent && (
-          <div className="alert" style={{ marginTop: 8 }}>
-            {activeEvent.kind === 'malus' ? 'Пакость' : 'Баф'}: {activeEvent.title}
-            {activeEvent.description && <div className="small-muted">{activeEvent.description}</div>}
-          </div>
-        )}
+  const controllerMode: ControllerMode = useMemo(() => {
+    if (!me) return 'join';
+    if (state?.phase === 'game_start_confirm') return 'start';
+    if (!me.ready) return 'ready';
+    if (state?.phase === 'lobby' || state?.phase === 'ready' || state?.phase === 'game_end') return 'wait_start';
+    return 'in_game';
+  }, [me, state?.phase]);
 
-        {!me && (
-          <div className="stacked-inputs">
-            <input className="input" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Никнейм" />
-            <select className="input" value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
-              {state?.characters.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.ability ? `(${c.ability.name})` : ''}
+  return (
+    <div className="controller-screen">
+      {controllerMode === 'join' && (
+        <ControllerJoin
+          characters={state?.characters || []}
+          characterId={characterId}
+          nickname={nickname}
+          onCharacterChange={setCharacterId}
+          onJoin={joinGame}
+          onNicknameChange={setNickname}
+          error={joinError}
+        />
+      )}
+
+      {controllerMode === 'ready' && <ControllerReadyButton onReady={toggleReady} disabled={!connected} />}
+
+      {controllerMode === 'wait_start' && <ControllerWaitStart />}
+
+      {controllerMode === 'start' && <ControllerStartButton onStart={startGame} />}
+
+      {controllerMode === 'in_game' && state && me && (
+        <ControllerInGame
+          state={state}
+          me={me}
+          ability={ability}
+          abilityUses={abilityUses}
+          allowedOptions={allowedOptions}
+          orderedOptions={orderedOptions}
+          canAnswer={canAnswer}
+          freezeActive={freezeActive}
+          lockActive={lockActive}
+          eventLock={eventLock}
+          onAnswer={onAnswer}
+          categoriesForVote={categoriesForVote}
+          myVote={myVote}
+          voteForCategory={voteForCategory}
+          applyAbilityAndConfirm={applyAbilityAndConfirm}
+          confirmPreQuestion={confirmPreQuestion}
+          preparedForQuestion={preparedForQuestion}
+          targetPlayerId={targetPlayerId}
+          setTargetPlayerId={setTargetPlayerId}
+          otherPlayers={otherPlayers}
+          clearEventLock={clearEventLock}
+          info={info}
+          activeEvent={activeEvent}
+          continueNextRound={continueNextRound}
+        />
+      )}
+    </div>
+  );
+}
+
+interface ControllerJoinProps {
+  characters: Character[];
+  nickname: string;
+  characterId: string;
+  onNicknameChange: (value: string) => void;
+  onCharacterChange: (value: string) => void;
+  onJoin: () => void;
+  error?: string;
+}
+
+function ControllerJoin({ characters, nickname, characterId, onNicknameChange, onCharacterChange, onJoin, error }: ControllerJoinProps) {
+  return (
+    <div className="controller-card">
+      <div className="controller-title">Войти</div>
+      <div className="character-grid">
+        {characters.map((character) => (
+          <button
+            key={character.id}
+            type="button"
+            className={`character-tile ${characterId === character.id ? 'selected' : ''}`}
+            onClick={() => onCharacterChange(character.id)}
+          >
+            <div className="character-icon">{character.icon || '✨'}</div>
+            <div className="character-name">{character.name}</div>
+          </button>
+        ))}
+      </div>
+      <div className="stacked-inputs" style={{ marginTop: 12 }}>
+        <input className="input" value={nickname} onChange={(e) => onNicknameChange(e.target.value)} placeholder="Имя" />
+        <button className="button-primary cta-button primary-action" onClick={onJoin} disabled={!nickname}>
+          Войти
+        </button>
+      </div>
+      {error && <div className="alert-warning" style={{ marginTop: 10 }}>{error}</div>}
+    </div>
+  );
+}
+
+function ControllerReadyButton({ onReady, disabled }: { onReady: () => void; disabled?: boolean }) {
+  return (
+    <div className="controller-card controller-centered">
+      <button className="button-primary primary-action" onClick={onReady} disabled={disabled}>
+        Готов
+      </button>
+    </div>
+  );
+}
+
+function ControllerWaitStart() {
+  return (
+    <div className="controller-card controller-centered">
+      <div className="wait-text">Ждём старт…</div>
+    </div>
+  );
+}
+
+function ControllerStartButton({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="controller-card controller-centered start-wrapper">
+      <div className="start-ring">
+        <svg viewBox="0 0 200 200" className="start-ring-svg" aria-hidden="true">
+          <circle cx="100" cy="100" r="92" />
+        </svg>
+      </div>
+      <button className="start-button" onClick={onStart} aria-label="Начать игру" type="button">
+        <span>Начать</span>
+      </button>
+    </div>
+  );
+}
+
+interface ControllerInGameProps {
+  state: GameState;
+  me: PlayerState;
+  ability?: Ability;
+  abilityUses: number;
+  allowedOptions: string[] | null;
+  orderedOptions: QuestionOption[];
+  canAnswer: boolean;
+  freezeActive: boolean;
+  lockActive: boolean;
+  eventLock: PlayerState['eventLock'];
+  onAnswer: (optionId: string) => void;
+  categoriesForVote: Category[];
+  myVote?: string;
+  voteForCategory: (categoryId: string) => void;
+  applyAbilityAndConfirm: () => void;
+  confirmPreQuestion: () => void;
+  preparedForQuestion: boolean;
+  targetPlayerId: string;
+  setTargetPlayerId: (id: string) => void;
+  otherPlayers: PlayerState[];
+  clearEventLock: () => void;
+  info: string;
+  activeEvent: ActiveEvent | null;
+  continueNextRound: () => void;
+}
+
+function ControllerInGame({
+  state,
+  me,
+  ability,
+  abilityUses,
+  allowedOptions,
+  orderedOptions,
+  canAnswer,
+  freezeActive,
+  lockActive,
+  eventLock,
+  onAnswer,
+  categoriesForVote,
+  myVote,
+  voteForCategory,
+  applyAbilityAndConfirm,
+  confirmPreQuestion,
+  preparedForQuestion,
+  targetPlayerId,
+  setTargetPlayerId,
+  otherPlayers,
+  clearEventLock,
+  info,
+  activeEvent,
+  continueNextRound,
+}: ControllerInGameProps) {
+  const { phase, currentQuestion } = state;
+
+  if (phase === 'next_round_confirm') {
+    return (
+      <div className="controller-card controller-centered">
+        <button className="button-primary primary-action" onClick={continueNextRound}>
+          Продолжить
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === 'category_select') {
+    return (
+      <div className="controller-card">
+        {state.phaseStartedAt && state.phaseEndsAt && (
+          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Выбор категории" />
+        )}
+        <div className="controller-title" style={{ marginTop: 12 }}>
+          Выберите категорию
+        </div>
+        <div className="mobile-answer-grid">
+          {categoriesForVote.map((cat) => {
+            const isMine = myVote === cat.id;
+            return (
+              <button
+                key={cat.id}
+                className={`option-button mobile-option ${isMine ? 'option-selected' : ''}`}
+                onClick={() => voteForCategory(cat.id)}
+                disabled={phase !== 'category_select'}
+              >
+                <div className="option-title">{cat.icon || '📚'} {cat.title}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'ability_phase') {
+    return (
+      <div className="controller-card">
+        <div className="controller-title">Подготовка</div>
+        <div className="ability-card mobile-ability">
+          <div className="ability-name">{ability ? ability.name : 'Способности недоступны'}</div>
+          {ability && <div className="small-muted">{ability.description}</div>}
+          {ability && <div className="small-muted">Осталось: {abilityUses}</div>}
+          {(ability?.id === 'shuffle_enemy' || ability?.id === 'freeze_enemy') && (
+            <select className="input" value={targetPlayerId} onChange={(e) => setTargetPlayerId(e.target.value)} style={{ marginTop: 8 }}>
+              <option value="">Выберите цель</option>
+              {otherPlayers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nickname}
                 </option>
               ))}
             </select>
-            <button className="button-primary cta-button" onClick={joinGame} disabled={!nickname}>
-              Войти в игру
-            </button>
-            {joinError && <div className="alert-warning">{joinError}</div>}
-          </div>
-        )}
-
-        {me && (
-          <div className="stacked-inputs">
-            <button
-              className="button-primary cta-button"
-              onClick={toggleReady}
-              disabled={!(state?.phase === 'lobby' || state?.phase === 'ready' || state?.phase === 'game_end')}
-            >
-              {me.ready ? 'Не готов' : 'Готов'}
-            </button>
-            <div className="small-muted">{statusMessage()}</div>
-          </div>
-        )}
-
-        {me && state?.phase === 'game_start_confirm' && (
-          <div className="stacked-inputs">
-            <button className="button-primary cta-button" onClick={startGame}>
-              Начать игру
-            </button>
-            <div className="small-muted">Любой игрок может нажать.</div>
-          </div>
-        )}
-
-        {me && state?.phase === 'category_select' && (
-          <div className="mobile-card" style={{ marginTop: 12 }}>
-            <div className="section-title" style={{ marginBottom: 8 }}>
-              Голосуйте за категорию
-            </div>
-            <div className="mobile-answer-grid">
-              {categoriesForVote.map((cat) => {
-                const votes = voteStats[cat.id] || 0;
-                const isMine = myVote === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    className="option-button mobile-option"
-                    onClick={() => voteForCategory(cat.id)}
-                    disabled={state.phase !== 'category_select'}
-                    style={{
-                      borderColor: isMine ? '#22d3ee' : undefined,
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>
-                      {cat.icon || '📚'} {cat.title}
-                    </div>
-                    <div className="small-muted">Голоса: {votes}</div>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="small-muted" style={{ marginTop: 8 }}>
-              Категория выбирается по большинству голосов игроков. При равенстве — случайно.
-            </div>
-          </div>
-        )}
-
-        {me && state?.phase === 'ability_phase' && (
-          <div className="ability-card mobile-ability">
-            <div style={{ fontWeight: 700 }}>{ability ? ability.name : 'Подготовка к вопросу'}</div>
-            <div className="small-muted">{ability ? ability.description : 'Бафы и пакости применяются только сейчас.'}</div>
-            {ability && <div className="small-muted">Осталось использований: {abilityUses}</div>}
-            {(ability?.id === 'shuffle_enemy' || ability?.id === 'freeze_enemy') && (
-              <select className="input" value={targetPlayerId} onChange={(e) => setTargetPlayerId(e.target.value)} style={{ marginTop: 8 }}>
-                <option value="">Выберите цель</option>
-                {otherPlayers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nickname}
-                  </option>
-                ))}
-              </select>
-            )}
-            {ability?.id === 'shield' && (
-              <div className="alert" style={{ marginTop: 8 }}>
-                Пассивно: срабатывает при первой пакости.
-              </div>
-            )}
-            <div className="stacked-inputs" style={{ marginTop: 10 }}>
-              {ability && ability.id !== 'shield' && (
-                <button className="button-primary cta-button" onClick={applyAbilityAndConfirm} disabled={!canUseAbility || preparedForQuestion}>
-                  Применить
-                </button>
-              )}
-              <button className="button-primary cta-button" onClick={confirmPreQuestion} disabled={preparedForQuestion}>
-                {preparedForQuestion ? 'Готово' : 'Пропустить'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {me && state?.phase === 'next_round_confirm' && (
+          )}
           <div className="stacked-inputs" style={{ marginTop: 12 }}>
-            <button className="button-primary cta-button" onClick={continueNextRound}>
-              Продолжить
+            {ability && ability.id !== 'shield' && (
+              <button className="button-primary cta-button" onClick={applyAbilityAndConfirm} disabled={preparedForQuestion || abilityUses <= 0}>
+                Применить
+              </button>
+            )}
+            <button className="button-primary cta-button" onClick={confirmPreQuestion} disabled={preparedForQuestion}>
+              {preparedForQuestion ? 'Готово' : 'Пропустить'}
             </button>
-            <div className="small-muted">Любой игрок может начать следующий раунд.</div>
-          </div>
-        )}
-
-        {info && <div className="alert" style={{ marginTop: 10 }}>{info}</div>}
-        {lockActive && state?.phase !== 'question' && (
-          <div className="alert-warning" style={{ marginTop: 10, padding: 10 }}>
-            Эффект события блокирует ответы.
-            <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
-              Снять эффект
-            </button>
-          </div>
-        )}
-      </div>
-
-      {renderQuestion()}
-
-      {state?.phase && state.phase !== 'question' && state.phase !== 'game_end' && (
-        <div className="mobile-card" style={{ marginTop: 16 }}>
-          <div className="small-muted">
-            {state?.phase === 'category_select'
-              ? 'Идёт выбор категории'
-              : state?.phase === 'game_start_confirm'
-                ? 'Ждём, кто нажмёт «Начать»'
-                : state?.phase === 'ability_phase'
-                  ? 'Окно способностей перед вопросом'
-                  : state?.phase === 'next_round_confirm'
-                    ? 'Подтвердите продолжение раунда'
-                    : state?.phase === 'intermission'
-                      ? 'Мини-игра начинается на экране'
-                      : 'Смотрите на экран: скоро следующий вопрос'}
           </div>
         </div>
-      )}
+        {info && <div className="info-banner">{info}</div>}
+      </div>
+    );
+  }
+
+  if (phase === 'question' && currentQuestion) {
+    const timeLimitMs = (currentQuestion.timeLimitSec || 15) * 1000;
+    const endsAt = state.questionStartTime ? state.questionStartTime + timeLimitMs : null;
+
+    return (
+      <div className="controller-card">
+        {endsAt && state.questionStartTime && <TimerBar startsAt={state.questionStartTime} endsAt={endsAt} label="Время" />}
+        <div className="question-title">{currentQuestion.text}</div>
+        {freezeActive && <div className="info-banner">Заморозка активна</div>}
+        {lockActive && (
+          <div className="info-banner">
+            {eventLock?.type === 'mud' ? 'Экран заляпан' : 'Лёд блокирует ответы'}
+            <button className="button-primary cta-button" style={{ marginTop: 8 }} onClick={clearEventLock}>
+              Очистить
+            </button>
+          </div>
+        )}
+        <div className="mobile-answer-grid">
+          {orderedOptions.map((opt) => {
+            const disabled = !canAnswer || (allowedOptions && !allowedOptions.includes(opt.id));
+            return (
+              <button
+                key={opt.id}
+                className={`option-button mobile-option ${me.lastAnswer?.optionId === opt.id ? 'option-selected' : ''}`}
+                disabled={disabled}
+                onClick={() => onAnswer(opt.id)}
+              >
+                {opt.text}
+              </button>
+            );
+          })}
+        </div>
+        {me.lastAnswer && <div className="info-banner subtle">Ответ принят</div>}
+      </div>
+    );
+  }
+
+  if (phase === 'answer_reveal' || phase === 'score') {
+    return (
+      <div className="controller-card controller-centered">
+        <div className="wait-text">Ответ принят</div>
+        {info && <div className="info-banner" style={{ marginTop: 8 }}>{info}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="controller-card controller-centered">
+      <div className="wait-text">Смотрите на экран</div>
+      {activeEvent && <div className="info-banner" style={{ marginTop: 10 }}>{activeEvent.title}</div>}
     </div>
   );
 }
