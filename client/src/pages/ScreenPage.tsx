@@ -259,7 +259,6 @@ export default function ScreenPage() {
           )}
         </div>
       )}
-    </div>
 
       {renderPhaseContent()}
 
