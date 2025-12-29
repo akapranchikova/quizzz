@@ -6,9 +6,10 @@ interface Props {
   label?: string;
   showTimeText?: boolean;
   className?: string;
+  accent?: string;
 }
 
-export default function TimerBar({ startsAt, endsAt, label, showTimeText = true, className }: Props) {
+export default function TimerBar({ startsAt, endsAt, label, showTimeText = true, className, accent }: Props) {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -25,9 +26,14 @@ export default function TimerBar({ startsAt, endsAt, label, showTimeText = true,
   const remaining = Math.max(0, endsAt - now);
   const progress = Math.max(0, Math.min(1, remaining / total));
   const seconds = Math.ceil(remaining / 1000);
+  const isEnding = seconds <= 3;
 
   return (
-    <div className={`timer-bar ${className || ''}`.trim()} aria-label="timer">
+    <div
+      className={`timer-bar ${className || ''} ${isEnding ? 'timer-bar--ending' : ''}`.trim()}
+      aria-label="timer"
+      style={{ ['--timer-accent' as string]: accent || '#22d3ee' }}
+    >
       <div className="timer-inner" style={{ width: `${progress * 100}%` }} />
       {showTimeText && (
         <div className="small-muted" style={{ marginTop: 6 }}>

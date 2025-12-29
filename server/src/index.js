@@ -36,6 +36,19 @@ const MINI_GAME_DURATION_MS = 9000;
 const NEXT_ROUND_CONFIRM_DURATION_MS = 8000;
 const ALL_CORRECT_BONUS_POINTS = 350;
 const RESUME_GRACE_PERIOD_MS = 45000;
+const CHARACTER_THEMES = {
+  spark: { art: '/assets/characters/spark.png', accent: '#f97316' },
+  glitch: { art: '/assets/characters/glitch.png', accent: '#22d3ee' },
+  frost: { art: '/assets/characters/frost.png', accent: '#38bdf8' },
+  shieldy: { art: '/assets/characters/shieldy.png', accent: '#a3e635' },
+};
+
+const CATEGORY_THEMES = {
+  geography: { art: '/assets/categories/geography.png', accent: '#22c55e' },
+  history: { art: '/assets/categories/history.png', accent: '#f59e0b' },
+  movies: { art: '/assets/categories/movies.png', accent: '#f472b6' },
+  geek: { art: '/assets/categories/geek.png', accent: '#8b5cf6' },
+};
 
 const app = express();
 app.use(cors());
@@ -290,13 +303,35 @@ async function loadJsonFile(filePath, fallback = {}) {
   }
 }
 
+function enrichCharacters(characters = []) {
+  return (characters || []).map((char) => {
+    const theme = CHARACTER_THEMES[char.id] || {};
+    return {
+      ...char,
+      art: char.art || theme.art || null,
+      accent: char.accent || char.color || theme.accent || '#8b5cf6',
+    };
+  });
+}
+
+function enrichCategories(categories = []) {
+  return (categories || []).map((cat) => {
+    const theme = CATEGORY_THEMES[cat.id] || {};
+    return {
+      ...cat,
+      art: cat.art || theme.art || null,
+      accent: cat.accent || cat.color || theme.accent || '#22d3ee',
+    };
+  });
+}
+
 async function loadData() {
   const questionsData = await loadJsonFile(QUESTIONS_PATH, { categories: [], questions: [] });
   const charactersData = await loadJsonFile(CHARACTERS_PATH, { characters: [] });
-  gameState.categories = questionsData.categories || [];
+  gameState.categories = enrichCategories(questionsData.categories || []);
   gameState.questions = questionsData.questions || [];
   gameState.categoryOptions = chooseCategoryOptions();
-  gameState.characters = charactersData.characters || [];
+  gameState.characters = enrichCharacters(charactersData.characters || []);
   gameState.miniGamePool = MINI_GAMES.slice();
   for (const player of gameState.players.values()) {
     player.abilityUses = getAbilityUses(player.characterId);

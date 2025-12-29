@@ -2,20 +2,22 @@ import Leaderboard from '../Leaderboard';
 import QuestionPrompt from '../QuestionPrompt';
 import QuestionResults from '../QuestionResults';
 import TimerBar from '../TimerBar';
-import { GameState } from '../../types';
+import { Category, GameState } from '../../types';
 
 interface Props {
   state: GameState;
+  activeCategory: Category | null;
+  accent?: string;
 }
 
-export default function ScreenInGame({ state }: Props) {
+export default function ScreenInGame({ state, activeCategory, accent }: Props) {
   const players = state.players || [];
   const currentQuestion = state.currentQuestion;
 
   const shouldShowTimer = state?.phase === 'category_select';
   const phaseTimer =
     shouldShowTimer && state?.phaseEndsAt && state?.phaseStartedAt ? (
-      <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} showTimeText={false} />
+      <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} showTimeText={false} accent={accent} />
     ) : null;
 
   const renderPhaseContent = () => {
@@ -31,11 +33,15 @@ export default function ScreenInGame({ state }: Props) {
         const categories = (state.categoryOptions || state.categories).slice(0, 4);
         return (
           <div className="phase-card category-select">
-            <div className="chip-row category-row">
+            <div className="category-grid">
               {categories.map((cat) => (
-                <div key={cat.id} className="chip neon-edge category-card">
-                  <span>{cat.icon || '📚'}</span>
-                  <strong>{cat.title}</strong>
+                <div
+                  key={cat.id}
+                  className="category-card neon-edge"
+                  style={{ ['--accent' as string]: cat.accent || '#8b5cf6' }}
+                >
+                  <div className="category-thumb">{cat.art ? <img src={cat.art} alt={cat.title} /> : <span>{cat.icon || '📚'}</span>}</div>
+                  <div className="category-title">{cat.title}</div>
                 </div>
               ))}
             </div>
@@ -49,18 +55,25 @@ export default function ScreenInGame({ state }: Props) {
         const activeCategory = availableCategories.find((cat) => cat.id === state.activeCategoryId);
         return (
           <div className="phase-card">
-            <div className="chip-grid">
-              {availableCategories.map((cat) => {
-                const highlight = cat.id === state.activeCategoryId;
-                return (
-                  <div key={cat.id} className={`chip neon-edge ${highlight ? 'active' : 'muted-chip'}`}>
-                    <span>{cat.icon || '📚'}</span>
-                    <strong>{cat.title}</strong>
-                  </div>
-                );
-              })}
-            </div>
-            {activeCategory && <div className="screen-message">Выбрана категория: {activeCategory.title}</div>}
+            {activeCategory && (
+              <div
+                className="category-reveal"
+                style={{ ['--accent' as string]: activeCategory.accent || '#8b5cf6' }}
+              >
+                <div className="category-reveal__thumb">
+                  {activeCategory.art ? (
+                    <img src={activeCategory.art} alt={activeCategory.title} />
+                  ) : (
+                    <span>{activeCategory.icon || '📚'}</span>
+                  )}
+                </div>
+                <div className="category-reveal__meta">
+                  <div className="pill pill-ghost">Категория</div>
+                  <div className="hero-text">{activeCategory.title}</div>
+                  <div className="screen-message muted">Готовьтесь к вопросу</div>
+                </div>
+              </div>
+            )}
           </div>
         );
       }
@@ -94,20 +107,54 @@ export default function ScreenInGame({ state }: Props) {
       case 'question':
         return (
           <div className="phase-card">
-            {currentQuestion && <QuestionPrompt question={currentQuestion} questionStartTime={state.questionStartTime} />}
+            {currentQuestion && (
+              <>
+                <div className="phase-header">
+                  <div className="phase-chip">Вопрос</div>
+                  {activeCategory && (
+                    <div className="category-chip" style={{ ['--accent' as string]: activeCategory.accent || '#22d3ee' }}>
+                      <div className="category-chip__thumb">
+                        {activeCategory.art ? (
+                          <img src={activeCategory.art} alt={activeCategory.title} />
+                        ) : (
+                          <span>{activeCategory.icon || '📚'}</span>
+                        )}
+                      </div>
+                      <span>{activeCategory.title}</span>
+                    </div>
+                  )}
+                </div>
+                <QuestionPrompt
+                  question={currentQuestion}
+                  questionStartTime={state.questionStartTime}
+                  accent={activeCategory?.accent || accent}
+                />
+              </>
+            )}
           </div>
         );
       case 'answer_reveal':
         return (
           <div className="phase-card">
-            {currentQuestion && <QuestionResults question={currentQuestion} answerStats={state.answerStats || {}} />}
+            {currentQuestion && (
+              <QuestionResults
+                question={currentQuestion}
+                answerStats={state.answerStats || {}}
+                accent={activeCategory?.accent}
+              />
+            )}
             {currentQuestion?.explanation && <div className="phase-note muted">{currentQuestion.explanation}</div>}
           </div>
         );
       case 'score':
         return (
           <div className="phase-card">
-            <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
+            <Leaderboard
+              leaderboard={state.leaderboard}
+              players={players}
+              characters={state?.characters || []}
+              highlight
+            />
           </div>
         );
       case 'intermission':

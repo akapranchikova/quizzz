@@ -3,6 +3,9 @@
     {
       "id": "spark",
       "name": "Искра",
+      "icon": "🔥",
+      "art": "/assets/characters/spark.png",
+      "accent": "#f97316",
       "ability": {
         "id": "fifty",
         "name": "50/50",
@@ -13,6 +16,9 @@
     {
       "id": "glitch",
       "name": "Глитч",
+      "icon": "🌀",
+      "art": "/assets/characters/glitch.png",
+      "accent": "#22d3ee",
       "ability": {
         "id": "shuffle_enemy",
         "name": "Перемешать кнопки",
@@ -23,6 +29,9 @@
     {
       "id": "frost",
       "name": "Фрост",
+      "icon": "❄️",
+      "art": "/assets/characters/frost.png",
+      "accent": "#38bdf8",
       "ability": {
         "id": "freeze_enemy",
         "name": "Заморозка",
@@ -33,6 +42,9 @@
     {
       "id": "shieldy",
       "name": "Щиток",
+      "icon": "🛡️",
+      "art": "/assets/characters/shieldy.png",
+      "accent": "#a3e635",
       "ability": {
         "id": "shield",
         "name": "Щит",

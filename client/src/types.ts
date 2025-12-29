@@ -20,6 +20,8 @@ export interface Category {
   title: string;
   icon?: string;
   color?: string;
+  art?: string;
+  accent?: string;
   difficulty?: number;
 }
 
@@ -50,6 +52,9 @@ export interface Character {
   id: string;
   name: string;
   ability?: Ability;
+  icon?: string;
+  art?: string;
+  accent?: string;
 }
 
 export interface AnswerRecord {

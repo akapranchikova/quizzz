@@ -15,7 +15,16 @@ export default function ScreenReadyCheck({ players, characters }: Props) {
           const char = p.characterId ? lookup[p.characterId] : null;
           return (
             <div key={p.id} className="ready-card">
-              <div className="ready-avatar">{p.nickname[0]?.toUpperCase() || '•'}</div>
+              <div
+                className="ready-avatar"
+                style={{ background: char?.accent || '#0f172a', borderColor: char?.accent || '#1e293b' }}
+              >
+                {char?.art ? (
+                  <img src={char.art} alt={char.name} />
+                ) : (
+                  char?.icon || p.nickname[0]?.toUpperCase() || '•'
+                )}
+              </div>
               <div className="ready-meta">
                 <div className="ready-name">{p.nickname}</div>
                 {char ? <div className="ready-role">{char.name}</div> : null}

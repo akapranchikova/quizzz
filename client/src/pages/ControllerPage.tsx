@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
+import { usePhaseEffects } from '../hooks/usePhaseEffects';
 import { Ability, ActiveEvent, Category, Character, GameState, PlayerState, QuestionOption } from '../types';
 import TimerBar from '../components/TimerBar';
 import HoldToConfirmButton, { DEFAULT_HOLD_MS } from '../components/HoldToConfirmButton';
+import { isSoundUnlocked, onSoundUnlocked, playSfx, unlockSound } from '../utils/sound';
 
 function reorderOptions(options: QuestionOption[], order?: string[] | null) {
   if (!order || !order.length) return options;
@@ -27,6 +29,7 @@ export default function ControllerPage() {
   const [info, setInfo] = useState('');
   const [joinError, setJoinError] = useState('');
   const [missedRound, setMissedRound] = useState<number | null>(null);
+  const [soundReady, setSoundReady] = useState(isSoundUnlocked());
 
   const me = state?.players.find((p) => p.id === playerId);
   const myCharacter = state?.characters.find((c) => c.id === (me?.characterId || characterId));
@@ -37,6 +40,10 @@ export default function ControllerPage() {
   const preparedForQuestion = me ? Boolean(state?.preQuestionReady?.[me.id] || me.preparedForQuestion) : false;
   const availableCharacters = state?.characters || [];
   const isCharacterSupported = availableCharacters.some((c) => c.id === characterId);
+
+  useEffect(() => {
+    return onSoundUnlocked(() => setSoundReady(true));
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
@@ -138,8 +145,22 @@ export default function ControllerPage() {
     });
   }, [state?.characters]);
 
+  const handleUnlockSound = () => {
+    if (soundReady) return;
+    unlockSound();
+    setSoundReady(isSoundUnlocked());
+  };
+
+  usePhaseEffects(state, {
+    onLastSeconds: (remaining, phase) => {
+      if (phase !== 'question') return;
+      playSfx('tick', { volume: 0.2, rate: 1 + (3 - remaining) * 0.05 });
+    },
+  });
+
   const joinGame = () => {
     if (!socket || !nickname) return;
+    playSfx('ui_tap', { volume: 0.28 });
     setJoinError('');
     socket.emit('player:join', { nickname, characterId }, (res?: { ok: boolean; error?: string; playerId?: string; resumeToken?: string }) => {
       if (!res?.ok) {
@@ -161,16 +182,19 @@ export default function ControllerPage() {
   };
 
   const toggleReady = () => {
+    playSfx('ui_tap', { volume: 0.28 });
     socket?.emit('player:ready', !me?.ready);
   };
 
   const startGame = () => {
     if (state?.phase !== 'game_start_confirm') return;
+    playSfx('ui_tap', { volume: 0.3 });
     socket?.emit('player:startGame');
   };
 
   const continueNextRound = () => {
     if (state?.phase !== 'next_round_confirm') return;
+    playSfx('ui_tap', { volume: 0.3 });
     socket?.emit('player:continueNextRound');
   };
 
@@ -184,11 +208,13 @@ export default function ControllerPage() {
 
   const onAnswer = (optionId: string) => {
     if (!canAnswer) return;
+    playSfx('ui_tap', { volume: 0.3 });
     socket?.emit('player:answer', { optionId });
   };
 
   const confirmPreQuestion = () => {
     if (!socket || state?.phase !== 'ability_phase' || !canParticipate) return;
+    playSfx('ui_tap', { volume: 0.24 });
     socket.emit('player:confirmPreQuestion');
   };
 
@@ -200,6 +226,7 @@ export default function ControllerPage() {
         return false;
       }
     }
+    playSfx('ui_tap', { volume: 0.28 });
     socket?.emit('player:useAbility', { abilityId: ability.id, targetPlayerId });
     return true;
   };
@@ -217,11 +244,13 @@ export default function ControllerPage() {
 
   const voteForCategory = (categoryId: string) => {
     if (!me || !socket || state?.phase !== 'category_select' || !canParticipate) return;
+    playSfx('ui_tap', { volume: 0.22 });
     socket.emit('player:voteCategory', { categoryId });
   };
 
   const clearEventLock = () => {
     if (!socket || !eventLock || !isActivePlayer) return;
+    playSfx('ui_tap', { volume: 0.24 });
     socket.emit('player:clearEventLock');
   };
 
@@ -232,9 +261,22 @@ export default function ControllerPage() {
     if (state?.phase === 'lobby' || state?.phase === 'ready' || state?.phase === 'game_end') return 'wait_start';
     return 'in_game';
   }, [me, state?.phase]);
+  const headerCharacter = myCharacter || availableCharacters.find((c) => c.id === characterId) || null;
+  const headerAccent = headerCharacter?.accent || '#22d3ee';
 
   return (
-    <div className="controller-screen">
+    <div className="controller-screen" onPointerDownCapture={handleUnlockSound}>
+      {headerCharacter && (
+        <div className="controller-header" style={{ ['--accent' as string]: headerAccent }}>
+          <div className="controller-header__thumb">
+            {headerCharacter.art ? <img src={headerCharacter.art} alt={headerCharacter.name} /> : <span>{headerCharacter.icon || '✨'}</span>}
+          </div>
+          <div className="controller-header__meta">
+            <div className="small-muted">Ваш персонаж</div>
+            <div className="controller-header__name">{headerCharacter.name}</div>
+          </div>
+        </div>
+      )}
       {controllerMode === 'join' && (
         <ControllerJoin
           characters={state?.characters || []}
@@ -283,6 +325,7 @@ export default function ControllerPage() {
           continueNextRound={continueNextRound}
           missedRound={missedRound}
           isActivePlayer={isActivePlayer}
+          accentColor={headerAccent}
         />
       )}
     </div>
@@ -311,17 +354,25 @@ function ControllerJoin({ characters, nickname, characterId, onNicknameChange, o
             <button
               key={character.id}
               type="button"
-              className={`character-tile ${characterId === character.id ? 'selected' : ''}`}
-              onClick={() => onCharacterChange(character.id)}
+              className={`character-tile tappable ${characterId === character.id ? 'selected' : ''}`}
+              onClick={() => {
+                playSfx('ui_tap', { volume: 0.22 });
+                onCharacterChange(character.id);
+              }}
             >
-              <div className="character-icon">{character.icon || '✨'}</div>
+              <div
+                className="character-thumb"
+                style={{ ['--accent' as string]: character.accent || '#22d3ee' }}
+              >
+                {character.art ? <img src={character.art} alt={character.name} /> : <span>{character.icon || '✨'}</span>}
+              </div>
               <div className="character-name">{character.name}</div>
             </button>
           ))}
         </div>
         <div className="stacked-inputs">
           <input className="input" value={nickname} onChange={(e) => onNicknameChange(e.target.value)} placeholder="Имя" />
-          <button className="button-primary cta-button primary-action controller-main-button" onClick={onJoin} disabled={isJoinDisabled}>
+          <button className="button-primary cta-button primary-action controller-main-button tappable" onClick={onJoin} disabled={isJoinDisabled}>
             Войти
           </button>
         </div>
@@ -337,7 +388,7 @@ function ControllerJoin({ characters, nickname, characterId, onNicknameChange, o
 function ControllerReadyButton({ onReady, disabled }: { onReady: () => void; disabled?: boolean }) {
   return (
     <div className="controller-stage controller-centered">
-      <button className="ready-button" onClick={onReady} disabled={disabled}>
+      <button className="ready-button tappable" onClick={onReady} disabled={disabled}>
         Готов
       </button>
     </div>
@@ -389,6 +440,7 @@ interface ControllerInGameProps {
   continueNextRound: () => void;
   missedRound: number | null;
   isActivePlayer: boolean;
+  accentColor: string;
 }
 
 function ControllerInGame({
@@ -419,6 +471,7 @@ function ControllerInGame({
   continueNextRound,
   missedRound,
   isActivePlayer,
+  accentColor,
 }: ControllerInGameProps) {
   const { phase, currentQuestion } = state;
   const [localAnswerId, setLocalAnswerId] = useState<string | null>(null);
@@ -449,7 +502,12 @@ function ControllerInGame({
     return (
       <div className="controller-stage controller-stage--flow controller-stage--stack">
         {state.phaseStartedAt && state.phaseEndsAt && (
-          <TimerBar startsAt={state.phaseStartedAt} endsAt={state.phaseEndsAt} label="Выбор категории" />
+          <TimerBar
+            startsAt={state.phaseStartedAt}
+            endsAt={state.phaseEndsAt}
+            label="Выбор категории"
+            accent={accentColor}
+          />
         )}
         {statusBanner}
         <div className="controller-stack">
@@ -460,7 +518,7 @@ function ControllerInGame({
               return (
                 <button
                   key={cat.id}
-                  className={`option-button mobile-option ${isMine ? 'option-selected' : ''}`}
+                  className={`option-button mobile-option tappable ${isMine ? 'option-selected' : ''}`}
                   onClick={() => voteForCategory(cat.id)}
                   disabled={phase !== 'category_select' || !canParticipate}
                 >
@@ -495,11 +553,11 @@ function ControllerInGame({
           )}
           <div className="stacked-inputs" style={{ marginTop: 12 }}>
             {ability && ability.id !== 'shield' && (
-              <button className="button-primary cta-button controller-main-button" onClick={applyAbilityAndConfirm} disabled={preparedForQuestion || abilityUses <= 0 || !canParticipate}>
+              <button className="button-primary cta-button controller-main-button tappable" onClick={applyAbilityAndConfirm} disabled={preparedForQuestion || abilityUses <= 0 || !canParticipate}>
                 Применить
               </button>
             )}
-            <button className="button-primary cta-button controller-main-button" onClick={confirmPreQuestion} disabled={preparedForQuestion || !canParticipate}>
+            <button className="button-primary cta-button controller-main-button tappable" onClick={confirmPreQuestion} disabled={preparedForQuestion || !canParticipate}>
               {preparedForQuestion ? 'Готово' : 'Пропустить'}
             </button>
           </div>
@@ -536,6 +594,7 @@ function ControllerInGame({
             endsAt={endsAt}
             showTimeText={false}
             className="controller-timer timer-bar--compact"
+            accent={headerAccent}
           />
         )}
           {statusBanner}

@@ -4,145 +4,193 @@
       "id": "music",
       "title": "Музыка",
       "icon": "🎵",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#f472b6",
+      "art": null
     },
     {
       "id": "movies",
       "title": "Кино и сериалы",
       "icon": "🎬",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#f97316",
+      "art": "/assets/categories/movies.png"
     },
     {
       "id": "games",
       "title": "Игры",
       "icon": "🎮",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#22c55e",
+      "art": null
     },
     {
       "id": "random",
       "title": "Рандом",
       "icon": "🎲",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#a855f7",
+      "art": null
     },
     {
       "id": "science",
       "title": "Наука",
       "icon": "🧪",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "history",
       "title": "История",
       "icon": "🏺",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#f59e0b",
+      "art": "/assets/categories/history.png"
     },
     {
       "id": "tech",
       "title": "Технологии",
       "icon": "💻",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#8b5cf6",
+      "art": "/assets/categories/geek.png"
     },
     {
       "id": "food",
       "title": "Еда",
       "icon": "🍕",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#f43f5e",
+      "art": null
     },
     {
       "id": "travel",
       "title": "Путешествия",
       "icon": "✈️",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#0ea5e9",
+      "art": null
     },
     {
       "id": "literature",
       "title": "Литература",
       "icon": "📚",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#c084fc",
+      "art": null
     },
     {
       "id": "sports",
       "title": "Спорт",
       "icon": "⚽",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#22c55e",
+      "art": null
     },
     {
       "id": "art",
       "title": "Искусство",
       "icon": "🎨",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#fb7185",
+      "art": null
     },
     {
       "id": "geography",
       "title": "География",
       "icon": "🗺️",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#14b8a6",
+      "art": "/assets/categories/geography.png"
     },
     {
       "id": "mythology",
       "title": "Мифология",
       "icon": "🧙‍♂️",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "nature",
       "title": "Природа",
       "icon": "🌿",
-      "difficulty": 1
+      "difficulty": 1,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "memes",
       "title": "Мемы и интернет",
       "icon": "😂",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "nostalgia_90s",
       "title": "Ностальгия 90-х",
       "icon": "📼",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "nostalgia_80s",
       "title": "Ностальгия 80-х",
       "icon": "📺",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "nostalgia_00s",
       "title": "Ностальгия 00-х",
       "icon": "💿",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "netflix_series",
       "title": "Сериалы Netflix",
       "icon": "🔴",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "long_series",
       "title": "Длинные сериалы",
       "icon": "🧵",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "film_characters",
       "title": "Персонажи кино",
       "icon": "🎭",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "game_characters",
       "title": "Персонажи игр",
       "icon": "🕹️",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     },
     {
       "id": "geek_culture",
       "title": "Гик-культура",
       "icon": "🤓",
-      "difficulty": 2
+      "difficulty": 2,
+      "accent": "#22d3ee",
+      "art": null
     }
   ],
   "questions": [
