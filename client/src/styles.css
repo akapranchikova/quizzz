@@ -2,20 +2,18 @@
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #0f172a;
   background-color: #0b1221;
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
 }
 
 html,
 body,
 #root {
-  width: 100%;
   height: 100%;
-  min-height: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
   overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html {
@@ -62,44 +60,51 @@ button {
   margin: 0 auto;
 }
 
-.controller-screen {
+.controller-root {
   position: relative;
-  width: 100vw;
-  min-height: 100svh;
   height: 100dvh;
-  min-height: 100dvh;
+  height: 100svh;
+  width: 100vw;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-start;
-  gap: 8px;
-  padding: calc(env(safe-area-inset-top) + 10px) max(env(safe-area-inset-right), 12px) calc(env(safe-area-inset-bottom) + 12px) max(env(safe-area-inset-left), 12px);
+  gap: clamp(6px, 1.8vw, 10px);
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
   background: radial-gradient(circle at 20% 20%, rgba(124, 58, 237, 0.35), transparent 35%),
     radial-gradient(circle at 80% 0%, rgba(34, 211, 238, 0.25), transparent 32%),
     linear-gradient(135deg, #080a1a, #0d1026 45%, #080a1a);
   color: #e8edff;
   overflow: hidden;
   touch-action: manipulation;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
 }
 
 @supports not (height: 100dvh) {
-  .controller-screen {
+  .controller-root {
     height: 100svh;
-    min-height: 100svh;
   }
 }
 
 .controller-stage {
-  flex: 1;
+  flex: 1 1 auto;
   width: min(780px, 100%);
   max-height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  gap: 18px;
+  gap: clamp(10px, 2.6vw, 16px);
   text-align: center;
-  padding: clamp(12px, 4vw, 28px);
+  padding: clamp(10px, 3.4vw, 18px);
+  min-height: 0;
+  margin: 0 auto;
 }
 
 .controller-stage--flow {
@@ -108,6 +113,11 @@ button {
 
 .controller-stage--stack {
   align-items: stretch;
+}
+
+.controller-stage--join {
+  justify-content: flex-start;
+  gap: clamp(10px, 2.6vw, 16px);
 }
 
 .controller-centered {
@@ -123,8 +133,10 @@ button {
 .controller-stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: clamp(10px, 2.6vw, 14px);
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .controller-main-button {
@@ -137,43 +149,6 @@ button {
 
 .tappable:active {
   transform: scale(0.97);
-}
-
-.controller-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-  margin-bottom: 12px;
-  align-self: flex-start;
-}
-
-.controller-header__thumb {
-  width: 46px;
-  height: 46px;
-  border-radius: 14px;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.12), transparent 60%),
-    var(--accent, rgba(255, 255, 255, 0.06));
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 0 18px rgba(255, 255, 255, 0.12);
-}
-
-.controller-header__thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.controller-header__name {
-  font-weight: 800;
-  letter-spacing: -0.01em;
 }
 
 .ready-button {
@@ -203,33 +178,48 @@ button {
 }
 
 .controller-title {
-  font-size: 26px;
+  font-size: clamp(22px, 4.6vw, 26px);
   font-weight: 800;
-  margin-bottom: 12px;
+  margin-bottom: clamp(6px, 2vw, 10px);
   text-align: center;
 }
 
 .primary-action {
-  font-size: 22px;
-  padding: 16px 18px;
+  font-size: clamp(18px, 4.4vw, 22px);
+  padding: clamp(14px, 3.4vw, 18px) clamp(16px, 3.6vw, 20px);
   border-radius: 16px;
 }
 
 .character-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(10px, 2.5vw, 16px);
   width: 100%;
+  align-content: center;
+  justify-items: center;
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
+  height: 100%;
 }
 
 .character-tile {
   border: 2px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
-  padding: 12px;
+  padding: clamp(10px, 2.8vw, 14px);
   color: #fff;
   text-align: center;
   transition: border-color 0.15s ease, transform 0.1s ease, background 0.2s ease;
+  width: 100%;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1.6vw, 10px);
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  justify-content: space-between;
 }
 
 .character-tile.selected {
@@ -240,8 +230,9 @@ button {
 }
 
 .character-thumb {
+  flex: 1 1 auto;
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 1 / 1.05;
   border-radius: 12px;
   margin-bottom: 6px;
   display: grid;
@@ -256,15 +247,27 @@ button {
 .character-thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .character-thumb span {
-  font-size: 26px;
+  font-size: clamp(22px, 5vw, 26px);
 }
 
 .character-name {
   font-weight: 700;
+  font-size: clamp(14px, 3.6vw, 16px);
+}
+
+.controller-join__inputs {
+  margin-top: clamp(6px, 2vw, 12px);
+}
+
+.controller-join__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
 }
 
 .wait-text {
@@ -948,8 +951,8 @@ button {
 
 @supports not (height: 100dvh) {
   .screen-root {
-    height: 100vh;
-    min-height: 100vh;
+    height: 100svh;
+    min-height: 100svh;
   }
 }
 
