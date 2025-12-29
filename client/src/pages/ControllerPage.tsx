@@ -35,6 +35,8 @@ export default function ControllerPage() {
   const isActivePlayer = me?.status === 'active';
   const hasAnswered = Boolean(me?.lastAnswer);
   const preparedForQuestion = me ? Boolean(state?.preQuestionReady?.[me.id] || me.preparedForQuestion) : false;
+  const availableCharacters = state?.characters || [];
+  const isCharacterSupported = availableCharacters.some((c) => c.id === characterId);
 
   useEffect(() => {
     if (!socket) return;
@@ -124,9 +126,16 @@ export default function ControllerPage() {
   }, [state?.phase, state?.currentQuestion?.id]);
 
   useEffect(() => {
-    if (!state?.characters.length) return;
-    const first = state.characters[0];
-    setCharacterId((prev) => prev || first.id);
+    const characters = state?.characters || [];
+    if (!characters.length) {
+      setCharacterId('');
+      return;
+    }
+    const first = characters[0];
+    setCharacterId((prev) => {
+      const exists = characters.some((c) => c.id === prev);
+      return exists ? prev || first.id : first.id;
+    });
   }, [state?.characters]);
 
   const joinGame = () => {
@@ -136,6 +145,12 @@ export default function ControllerPage() {
       if (!res?.ok) {
         if (res?.error) {
           setJoinError(res.error);
+          const message = res.error.toLowerCase();
+          const missingCharacterError = message.includes('character') || message.includes('персонаж');
+          if (missingCharacterError || !availableCharacters.some((c) => c.id === characterId)) {
+            const fallback = availableCharacters[0]?.id || '';
+            setCharacterId(fallback);
+          }
         }
         return;
       }
@@ -229,6 +244,7 @@ export default function ControllerPage() {
           onJoin={joinGame}
           onNicknameChange={setNickname}
           error={joinError}
+          isCharacterSupported={isCharacterSupported}
         />
       )}
 
@@ -281,9 +297,11 @@ interface ControllerJoinProps {
   onCharacterChange: (value: string) => void;
   onJoin: () => void;
   error?: string;
+  isCharacterSupported: boolean;
 }
 
-function ControllerJoin({ characters, nickname, characterId, onNicknameChange, onCharacterChange, onJoin, error }: ControllerJoinProps) {
+function ControllerJoin({ characters, nickname, characterId, onNicknameChange, onCharacterChange, onJoin, error, isCharacterSupported }: ControllerJoinProps) {
+  const isJoinDisabled = !nickname || !isCharacterSupported;
   return (
     <div className="controller-stage controller-stage--flow controller-stage--stack">
       <div className="controller-title">Войти</div>
@@ -303,10 +321,13 @@ function ControllerJoin({ characters, nickname, characterId, onNicknameChange, o
         </div>
         <div className="stacked-inputs">
           <input className="input" value={nickname} onChange={(e) => onNicknameChange(e.target.value)} placeholder="Имя" />
-          <button className="button-primary cta-button primary-action controller-main-button" onClick={onJoin} disabled={!nickname}>
+          <button className="button-primary cta-button primary-action controller-main-button" onClick={onJoin} disabled={isJoinDisabled}>
             Войти
           </button>
         </div>
+        {characters.length > 0 && !isCharacterSupported && (
+          <div className="alert-warning">Этот персонаж недоступен. Выберите другого.</div>
+        )}
         {error && <div className="alert-warning">{error}</div>}
       </div>
     </div>
