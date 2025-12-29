@@ -246,6 +246,7 @@ export default function ControllerPage() {
           allowedOptions={allowedOptions}
           orderedOptions={orderedOptions}
           canAnswer={canAnswer}
+          canParticipate={canParticipate}
           freezeActive={freezeActive}
           lockActive={lockActive}
           eventLock={eventLock}
@@ -354,6 +355,7 @@ interface ControllerInGameProps {
   allowedOptions: string[] | null;
   orderedOptions: QuestionOption[];
   canAnswer: boolean;
+  canParticipate: boolean;
   freezeActive: boolean;
   lockActive: boolean;
   eventLock: PlayerState['eventLock'];
@@ -383,6 +385,7 @@ function ControllerInGame({
   allowedOptions,
   orderedOptions,
   canAnswer,
+  canParticipate,
   freezeActive,
   lockActive,
   eventLock,
