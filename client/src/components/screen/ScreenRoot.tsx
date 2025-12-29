@@ -51,6 +51,8 @@ export default function ScreenRoot({ state }: Props) {
   const [categoryKey, setCategoryKey] = useState(0);
   const [questionFlashKey, setQuestionFlashKey] = useState(0);
   const [scoreKey, setScoreKey] = useState(0);
+  const [finaleKey, setFinaleKey] = useState(0);
+  const [impactKey, setImpactKey] = useState(0);
   const [lastSeconds, setLastSeconds] = useState(false);
   const [soundReady, setSoundReady] = useState(isSoundUnlocked());
   const [soundPromptDismissed, setSoundPromptDismissed] = useState(false);
@@ -60,6 +62,8 @@ export default function ScreenRoot({ state }: Props) {
   const players = state?.players || [];
   const activeCategory = useMemo(() => findActiveCategory(state), [state]);
   const accent = featuredCategory?.accent || activeCategory?.accent || '#6366f1';
+  const isFinalStretch = (state?.maxRounds || 0) > 0 && (state?.roundNumber || 0) >= (state?.maxRounds || 0) - 1;
+  const isFinalQuestion = isFinalStretch && state?.phase === 'question';
 
   useEffect(() => {
     return onSoundUnlocked(() => setSoundReady(true));
@@ -83,6 +87,12 @@ export default function ScreenRoot({ state }: Props) {
     return () => window.clearTimeout(t);
   }, [scoreKey]);
 
+  useEffect(() => {
+    if (!state?.recentImpact) return;
+    if (Date.now() - state.recentImpact.at > 2400) return;
+    setImpactKey(Date.now());
+  }, [state?.recentImpact?.at]);
+
   const handleUnlock = () => {
     unlockSound();
     setSoundReady(isSoundUnlocked());
@@ -99,7 +109,12 @@ export default function ScreenRoot({ state }: Props) {
       }
       if (phase === 'question') {
         setQuestionFlashKey(Date.now());
-        playSfx('reveal', { volume: 0.28, rate: 1.05 });
+        const totalRounds = state?.maxRounds || 0;
+        const isFinale = totalRounds > 0 && (state?.roundNumber || 0) >= totalRounds;
+        playSfx('reveal', { volume: 0.32, rate: isFinale ? 0.82 : 1.05 });
+        if (isFinale) {
+          setFinaleKey(Date.now());
+        }
       }
       if (phase === 'answer_reveal' && prev !== 'answer_reveal') {
         const correctId = state?.currentQuestion?.correctOptionId;
@@ -120,15 +135,31 @@ export default function ScreenRoot({ state }: Props) {
   });
 
   return (
-    <div className={`screen-root ${lastSeconds ? 'is-tense' : ''}`} onPointerDownCapture={soundReady ? undefined : handleUnlock}>
-      <ScreenBackground accent={accent} tense={lastSeconds} pulseKey={categoryKey || questionFlashKey || scoreKey} />
+    <div
+      className={`screen-root ${lastSeconds ? 'is-tense' : ''} ${isFinalStretch ? 'is-finale' : ''}`}
+      onPointerDownCapture={soundReady ? undefined : handleUnlock}
+    >
+      <ScreenBackground
+        accent={accent}
+        tense={lastSeconds}
+        pulseKey={categoryKey || questionFlashKey || scoreKey}
+        finale={isFinalStretch}
+      />
       <div className="screen-foreground">
         {mode === 'lobby_empty' && <ScreenLobbyEmpty controllerUrl={controllerUrl} maxPlayers={maxPlayers} />}
         {mode === 'lobby_waiting' && (
           <ScreenLobbyWaiting controllerUrl={controllerUrl} players={players} maxPlayers={maxPlayers} />
         )}
         {mode === 'ready_check' && <ScreenReadyCheck players={players} characters={state?.characters || []} />}
-        {mode === 'in_game' && state && <ScreenInGame state={state} activeCategory={activeCategory} accent={accent} />}
+        {mode === 'in_game' && state && (
+          <ScreenInGame
+            state={state}
+            activeCategory={activeCategory}
+            accent={accent}
+            impact={state.recentImpact}
+            finale={isFinalStretch}
+          />
+        )}
       </div>
       <ScreenEffects
         category={featuredCategory}
@@ -136,6 +167,12 @@ export default function ScreenRoot({ state }: Props) {
         questionFlashKey={questionFlashKey}
         scoreKey={scoreKey}
         lastSeconds={lastSeconds}
+        impact={state?.recentImpact}
+        impactKey={impactKey}
+        players={state?.players || []}
+        characters={state?.characters || []}
+        finaleKey={finaleKey}
+        showFinale={isFinalQuestion && Boolean(finaleKey)}
       />
       {!soundReady && !soundPromptDismissed && (
         <div className="sound-gate">
