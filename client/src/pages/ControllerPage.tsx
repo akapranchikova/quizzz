@@ -625,7 +625,7 @@ function ControllerInGame({
             endsAt={endsAt}
             showTimeText={false}
             className="controller-timer timer-bar--compact"
-            accent={headerAccent}
+            accent={accentColor}
           />
         )}
           {statusBanner}
