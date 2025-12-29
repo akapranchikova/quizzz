@@ -32,14 +32,14 @@ const QUESTION_DURATION_FALLBACK_MS = 15000;
 const ANSWER_REVEAL_DURATION_MS = 5500;
 const SCORE_DURATION_MS = 4500;
 const INTERMISSION_DURATION_MS = 2200;
-const MINI_GAME_DURATION_MS = 4800;
+const MINI_GAME_DURATION_MS = 8000;
 const NEXT_ROUND_CONFIRM_DURATION_MS = 8000;
 const ALL_CORRECT_BONUS_POINTS = 350;
 const RESUME_GRACE_PERIOD_MS = 45000;
-const MINI_GAME_SIGNAL_MIN_MS = 1200;
-const MINI_GAME_SIGNAL_MAX_MS = 2600;
-const MINI_GAME_BONUS_FIRST = 140;
-const MINI_GAME_BONUS_SECOND = 90;
+const MINI_GAME_SCORE_CAP = 500;
+const MINI_GAME_ALLOWED = ['MATCH_PAIRS', 'SORT_ORDER', 'CATEGORY_SNAP', 'ODD_ONE_OUT'];
+const MINI_GAME_SCHEDULE_DEFAULT = [4, 8];
+const MINI_GAME_SINGLE_FALLBACK = 6;
 const SPEED_BONUS_WINDOW_MS = 3000;
 const SPEED_BONUS_POINTS = 200;
 const CHARACTER_THEMES = {
@@ -99,9 +99,9 @@ const gameState = {
   activeEvent: null,
   allCorrectBonusActive: false,
   recentCategoryIds: [],
-  miniGamePool: [],
-  activeMiniGame: null,
   miniGamesPlayed: [],
+  miniGameSchedule: [],
+  activeMiniGame: null,
   miniGameState: null,
   recentImpact: null,
   phaseEligiblePlayerIds: null,
@@ -179,7 +179,7 @@ function getLocalIp() {
 }
 
 const preferredHost = process.env.PUBLIC_HOST || getLocalIp();
-const phasesWithEligiblePlayers = new Set(['category_select', 'ability_phase', 'question']);
+const phasesWithEligiblePlayers = new Set(['category_select', 'ability_phase', 'question', 'mini_game']);
 
 function generateResumeToken() {
   return randomBytes(24).toString('hex');
@@ -191,6 +191,16 @@ function clearGraceTimer(playerId) {
     clearTimeout(timer);
   }
   reconnectTimers.delete(playerId);
+}
+
+function buildMiniGameSchedule(maxRounds = MAX_ROUNDS) {
+  if (maxRounds >= Math.max(...MINI_GAME_SCHEDULE_DEFAULT)) {
+    return MINI_GAME_SCHEDULE_DEFAULT.filter((round) => round <= maxRounds);
+  }
+  if (maxRounds >= MINI_GAME_SINGLE_FALLBACK) {
+    return [MINI_GAME_SINGLE_FALLBACK];
+  }
+  return [];
 }
 
 function cleanupPlayerState(playerId) {
@@ -315,7 +325,10 @@ async function loadData() {
   gameState.questions = questionsData.questions || [];
   gameState.categoryOptions = chooseCategoryOptions();
   gameState.characters = enrichCharacters(charactersData.characters || []);
-  gameState.miniGamePool = [{ id: 'tap_signal', title: 'WAIT...TAP' }];
+  gameState.miniGameSchedule = buildMiniGameSchedule(gameState.maxRounds || MAX_ROUNDS);
+  gameState.miniGamesPlayed = [];
+  gameState.activeMiniGame = null;
+  gameState.miniGameState = null;
   for (const player of gameState.players.values()) {
     player.abilityUses = getAbilityUses(player.characterId);
     player.status = player.status || 'active';
@@ -347,7 +360,7 @@ function resetGame(keepPlayers = true) {
   gameState.activeEvent = null;
   gameState.allCorrectBonusActive = false;
   gameState.recentCategoryIds = [];
-  gameState.miniGamePool = [{ id: 'tap_signal', title: 'WAIT...TAP' }];
+  gameState.miniGameSchedule = buildMiniGameSchedule(gameState.maxRounds || MAX_ROUNDS);
   gameState.activeMiniGame = null;
   gameState.miniGamesPlayed = [];
   gameState.miniGameState = null;
@@ -665,7 +678,7 @@ function prepareForMatch() {
   gameState.activeEvent = null;
   gameState.recentCategoryIds = [];
   gameState.allCorrectBonusActive = false;
-  gameState.miniGamePool = [{ id: 'tap_signal', title: 'WAIT...TAP' }];
+  gameState.miniGameSchedule = buildMiniGameSchedule(gameState.maxRounds || MAX_ROUNDS);
   gameState.miniGamesPlayed = [];
   gameState.activeMiniGame = null;
   gameState.miniGameState = null;
@@ -811,7 +824,8 @@ function startScoreAnimation() {
 
 function shouldEnterIntermission() {
   const completedQuestions = gameState.roundNumber;
-  return (completedQuestions === 3 || completedQuestions === 6) && gameState.miniGamePool.length > 0;
+  const schedule = gameState.miniGameSchedule || [];
+  return schedule.includes(completedQuestions);
 }
 
 function startIntermissionOrNextRound() {
@@ -847,45 +861,191 @@ function startNextRoundConfirm() {
   setPhase('next_round_confirm', NEXT_ROUND_CONFIRM_DURATION_MS);
 }
 
-function pickMiniGame() {
-  if (!gameState.miniGamePool.length) return null;
-  const shuffled = [...gameState.miniGamePool].sort(() => Math.random() - 0.5);
-  return shuffled[0];
+function randomFromArray(list = []) {
+  if (!list.length) return null;
+  return list[Math.floor(Math.random() * list.length)];
 }
 
-function finalizeMiniGame() {
-  const miniGame = gameState.miniGameState;
-  if (!miniGame || miniGame.id !== 'tap_signal') return;
-  const taps = Object.entries(miniGame.taps || {}).filter(([, tap]) => !tap.early && typeof tap.delta === 'number');
-  if (!taps.length) return;
-  const ranked = taps.sort((a, b) => (a[1].delta || 0) - (b[1].delta || 0));
-  const winners = ranked.slice(0, 2).map(([playerId]) => playerId);
-  miniGame.winners = winners;
-  winners.forEach((playerId, idx) => {
-    const bonus = idx === 0 ? MINI_GAME_BONUS_FIRST : MINI_GAME_BONUS_SECOND;
-    const player = gameState.players.get(playerId);
-    if (player) {
-      player.score += bonus;
+function shuffleArray(list = []) {
+  return [...list].sort(() => Math.random() - 0.5);
+}
+
+function pickMiniGameType() {
+  const history = gameState.miniGamesPlayed || [];
+  const lastType = history[history.length - 1] || null;
+  const candidates = MINI_GAME_ALLOWED.filter(Boolean);
+  const filtered = candidates.filter((t) => t !== lastType);
+  return randomFromArray(filtered.length ? filtered : candidates);
+}
+
+function generateMatchPairsPayload() {
+  const icons = ['🔥', '🌊', '🌿', '⚡', '🎯', '🚀', '🎧', '🌟', '🍀', '🍉', '🧊', '🎲'];
+  const picked = shuffleArray(icons).slice(0, 4);
+  if (picked.length < 4) return null;
+  const cards = shuffleArray(
+    picked.flatMap((icon, idx) => {
+      const pairId = `pair_${idx}`;
+      return [
+        { id: `${pairId}_a`, pairId, icon },
+        { id: `${pairId}_b`, pairId, icon },
+      ];
+    })
+  );
+  return { type: 'MATCH_PAIRS', data: { cards }, durationMs: MINI_GAME_DURATION_MS };
+}
+
+function generateSortOrderPayload() {
+  const items = [
+    { id: 'one', label: '1️⃣' },
+    { id: 'two', label: '2️⃣' },
+    { id: 'three', label: '3️⃣' },
+    { id: 'four', label: '4️⃣' },
+  ];
+  const correctOrder = items.map((i) => i.id);
+  const shuffledItems = shuffleArray(items);
+  return { type: 'SORT_ORDER', data: { items: shuffledItems, correctOrder }, durationMs: MINI_GAME_DURATION_MS };
+}
+
+function generateCategorySnapPayload() {
+  const categories = [
+    { id: 'animal', label: '🐾' },
+    { id: 'food', label: '🍔' },
+    { id: 'tech', label: '💻' },
+  ];
+  const promptPool = [
+    { label: 'кот', category: 'animal' },
+    { label: 'бургер', category: 'food' },
+    { label: 'мишка', category: 'animal' },
+    { label: 'чипсы', category: 'food' },
+    { label: 'мышь', category: 'tech' },
+    { label: 'робот', category: 'tech' },
+    { label: 'сыр', category: 'food' },
+    { label: 'тигр', category: 'animal' },
+  ];
+  const prompts = shuffleArray(promptPool)
+    .slice(0, 6)
+    .map((p, idx) => ({ id: `snap_${idx}`, label: p.label, correctCategoryId: p.category }));
+  if (prompts.length < 4) return null;
+  return { type: 'CATEGORY_SNAP', data: { categories, prompts }, durationMs: MINI_GAME_DURATION_MS };
+}
+
+function generateOddOneOutPayload() {
+  const roundsPool = [
+    { items: ['🧊', '🔥', '☀️', '🌋'], odd: '🧊' },
+    { items: ['🍎', '🍌', '🥕', '🍇'], odd: '🥕' },
+    { items: ['🚗', '🚌', '✈️', '🚲'], odd: '✈️' },
+    { items: ['🎧', '🎺', '🥁', '📱'], odd: '📱' },
+    { items: ['⚽', '🏀', '🎾', '🎻'], odd: '🎻' },
+    { items: ['🌊', '🏄', '⛵', '🏔️'], odd: '🏔️' },
+    { items: ['📚', '📝', '🎨', '🍰'], odd: '🍰' },
+  ];
+  const rounds = shuffleArray(roundsPool)
+    .slice(0, 6)
+    .map((r, idx) => {
+      const items = shuffleArray(r.items).map((label, itemIdx) => ({ id: `odd_${idx}_${itemIdx}`, label }));
+      const correctItem = items.find((i) => i.label === r.odd) || items[0];
+      return { id: `round_${idx}`, items, correctId: correctItem.id };
+    });
+  if (!rounds.length) return null;
+  return { type: 'ODD_ONE_OUT', data: { rounds }, durationMs: MINI_GAME_DURATION_MS };
+}
+
+function createMiniGamePayload() {
+  const type = pickMiniGameType();
+  if (!type) return null;
+  const generators = {
+    MATCH_PAIRS: generateMatchPairsPayload,
+    SORT_ORDER: generateSortOrderPayload,
+    CATEGORY_SNAP: generateCategorySnapPayload,
+    ODD_ONE_OUT: generateOddOneOutPayload,
+  };
+  const payload = generators[type]?.();
+  if (!payload) return null;
+  return { ...payload, type };
+}
+
+function ensureMiniGameProgress(playerId) {
+  if (!gameState.miniGameState || !gameState.activeMiniGame) return null;
+  const type = gameState.activeMiniGame.type;
+  const progress = gameState.miniGameState.progress || {};
+  if (!progress[playerId]) {
+    if (type === 'MATCH_PAIRS') {
+      progress[playerId] = { score: 0, done: false, openCardIds: [], matchedPairIds: [] };
+    } else if (type === 'SORT_ORDER') {
+      const items = gameState.activeMiniGame.data.items || [];
+      let shuffled = shuffleArray(items.map((i) => i.id));
+      const correct = gameState.activeMiniGame.data.correctOrder || [];
+      if (shuffled.join(',') === correct.join(',') && shuffled.length > 1) {
+        [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
+      }
+      progress[playerId] = { score: 0, done: false, order: shuffled };
+    } else if (type === 'CATEGORY_SNAP') {
+      progress[playerId] = { score: 0, done: false, promptIndex: 0, hits: 0, misses: 0 };
+    } else if (type === 'ODD_ONE_OUT') {
+      progress[playerId] = { score: 0, done: false, roundIndex: 0, hits: 0 };
     }
-  });
-  computeLeaderboard();
-  gameState.recentImpact = { from: winners[0] || null, target: null, effect: 'mini_game', at: Date.now(), kind: 'event' };
+    gameState.miniGameState.progress = progress;
+  }
+  return progress[playerId];
+}
+
+function updateMiniGameScore(progress, delta) {
+  const next = Math.min(MINI_GAME_SCORE_CAP, Math.max(0, Math.round((progress.score || 0) + delta)));
+  progress.score = next;
+}
+
+function checkMiniGameCompletion() {
+  const activePlayers = getActiveEligiblePlayerIds();
+  const progress = gameState.miniGameState?.progress || {};
+  if (!activePlayers.length) return false;
+  return activePlayers.every((id) => progress[id]?.done);
+}
+
+function finalizeMiniGame(applyScores = true) {
+  const miniGame = gameState.activeMiniGame;
+  const state = gameState.miniGameState;
+  if (!miniGame || !state || state.finished) return;
+  state.finished = true;
+  const results = [];
+  if (applyScores) {
+    const now = Date.now();
+    for (const player of getActivePlayers()) {
+      const progress = state.progress?.[player.id] || { score: 0 };
+      const awarded = Math.min(MINI_GAME_SCORE_CAP, Math.max(0, Math.round(progress.score || 0)));
+      if (awarded > 0) {
+        player.score += awarded;
+      }
+      results.push({ playerId: player.id, score: awarded, done: Boolean(progress.done) });
+    }
+    state.results = results.sort((a, b) => b.score - a.score).slice(0, 3);
+    if (state.results[0]?.playerId) {
+      gameState.recentImpact = { from: state.results[0].playerId, target: null, effect: 'mini_game', at: now, kind: 'event' };
+    }
+    computeLeaderboard();
+  }
 }
 
 function startMiniGame() {
-  if (!shouldEnterIntermission() || !gameState.miniGamePool.length) {
+  if (!shouldEnterIntermission()) {
     startNextRoundConfirm();
     return;
   }
-  const miniGame = pickMiniGame() || { id: 'tap_signal', title: 'WAIT...TAP' };
-  gameState.activeMiniGame = miniGame;
-  gameState.miniGamesPlayed = [...(gameState.miniGamesPlayed || []), miniGame.id];
-  gameState.miniGamePool = gameState.miniGamePool.filter((m) => m.id !== miniGame.id);
-  const now = Date.now();
-  const jitter =
-    MINI_GAME_SIGNAL_MIN_MS + Math.random() * Math.max(0, MINI_GAME_SIGNAL_MAX_MS - MINI_GAME_SIGNAL_MIN_MS);
-  gameState.miniGameState = { id: 'tap_signal', signalAt: now + jitter, taps: {}, winners: [] };
-  setPhase('mini_game', MINI_GAME_DURATION_MS, () => {
+  const payload = createMiniGamePayload();
+  if (!payload || !payload.data) {
+    startNextRoundConfirm();
+    return;
+  }
+  gameState.activeMiniGame = { type: payload.type, data: payload.data, durationMs: payload.durationMs || MINI_GAME_DURATION_MS };
+  gameState.miniGamesPlayed = [...(gameState.miniGamesPlayed || []), payload.type];
+  gameState.miniGameSchedule = (gameState.miniGameSchedule || []).filter((round) => round !== gameState.roundNumber);
+  setPhase('mini_game', gameState.activeMiniGame.durationMs, () => {
+    gameState.miniGameState = {
+      startedAt: gameState.phaseStartedAt,
+      endsAt: gameState.phaseEndsAt,
+      progress: {},
+      results: [],
+      finished: false,
+    };
     broadcastState();
   });
 }
@@ -900,27 +1060,6 @@ function pickEventTargetId() {
 function pickRandomEvent() {
   if (Math.random() > RANDOM_EVENT_CHANCE) return null;
   return RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
-}
-
-function recordMiniGameTap(player) {
-  if (!player || gameState.phase !== 'mini_game' || !gameState.miniGameState) return;
-  if (!isPlayerEligible(player.id)) return;
-  const miniGame = gameState.miniGameState;
-  miniGame.taps = miniGame.taps || {};
-  if (miniGame.taps[player.id]) return;
-  const now = Date.now();
-  const early = now < miniGame.signalAt;
-  const delta = early ? undefined : now - miniGame.signalAt;
-  miniGame.taps[player.id] = { at: now, early, delta };
-  const taps = Object.entries(miniGame.taps).filter(([, tap]) => !tap.early && typeof tap.delta === 'number');
-  if (taps.length) {
-    const leaders = taps.sort((a, b) => (a[1].delta || 0) - (b[1].delta || 0)).slice(0, 2);
-    miniGame.winners = leaders.map(([id]) => id);
-    if (leaders[0]?.[0]) {
-      gameState.recentImpact = { from: leaders[0][0], target: null, effect: 'mini_game', at: now, kind: 'event' };
-    }
-  }
-  broadcastState();
 }
 
 function applyRandomEvent(payload) {
@@ -972,6 +1111,115 @@ function applyRandomEvent(payload) {
     }
   }
   broadcastState();
+}
+
+function concludeMiniGameIfFinished() {
+  if (gameState.phase !== 'mini_game') return;
+  if (!checkMiniGameCompletion()) return;
+  finalizeMiniGame();
+  startNextRoundConfirm();
+}
+
+function handleMatchPairsAction(player, { cardId }) {
+  if (!cardId || !gameState.activeMiniGame?.data?.cards) return;
+  const playerProgress = ensureMiniGameProgress(player.id);
+  if (!playerProgress || playerProgress.done) return;
+  const cards = gameState.activeMiniGame.data.cards;
+  const card = cards.find((c) => c.id === cardId);
+  if (!card) return;
+  if (playerProgress.matchedPairIds.includes(card.pairId) || playerProgress.openCardIds.includes(cardId)) return;
+  playerProgress.openCardIds = [...(playerProgress.openCardIds || []), cardId].slice(-2);
+  if (playerProgress.openCardIds.length === 2) {
+    const [first, second] = playerProgress.openCardIds.map((id) => cards.find((c) => c.id === id));
+    if (first && second && first.pairId === second.pairId) {
+      playerProgress.matchedPairIds = [...new Set([...(playerProgress.matchedPairIds || []), first.pairId])];
+      updateMiniGameScore(playerProgress, 120);
+      playerProgress.openCardIds = [];
+      if (playerProgress.matchedPairIds.length >= 4) {
+        playerProgress.done = true;
+      }
+    } else {
+      playerProgress.openCardIds = [];
+    }
+  }
+}
+
+function handleSortOrderAction(player, { itemId, direction }) {
+  const items = gameState.activeMiniGame?.data?.items || [];
+  const correctOrder = gameState.activeMiniGame?.data?.correctOrder || [];
+  if (!items.length || !correctOrder.length) return;
+  const playerProgress = ensureMiniGameProgress(player.id);
+  if (!playerProgress || playerProgress.done) return;
+  const order = [...(playerProgress.order || items.map((i) => i.id))];
+  const index = order.findIndex((id) => id === itemId);
+  if (index === -1) return;
+  if (direction === 'up' && index > 0) {
+    [order[index - 1], order[index]] = [order[index], order[index - 1]];
+  } else if (direction === 'down' && index < order.length - 1) {
+    [order[index + 1], order[index]] = [order[index], order[index + 1]];
+  }
+  playerProgress.order = order;
+  const correctPositions = order.filter((id, idx) => id === correctOrder[idx]).length;
+  updateMiniGameScore(playerProgress, 80 * correctPositions - (playerProgress.score || 0));
+  if (order.join(',') === correctOrder.join(',')) {
+    playerProgress.done = true;
+    updateMiniGameScore(playerProgress, MINI_GAME_SCORE_CAP);
+  }
+}
+
+function handleCategorySnapAction(player, { categoryId }) {
+  const prompts = gameState.activeMiniGame?.data?.prompts || [];
+  if (!prompts.length) return;
+  const playerProgress = ensureMiniGameProgress(player.id);
+  if (!playerProgress || playerProgress.done) return;
+  const prompt = prompts[playerProgress.promptIndex] || prompts[prompts.length - 1];
+  if (!prompt) return;
+  if (categoryId === prompt.correctCategoryId) {
+    playerProgress.hits = (playerProgress.hits || 0) + 1;
+    updateMiniGameScore(playerProgress, 90);
+  } else {
+    playerProgress.misses = (playerProgress.misses || 0) + 1;
+  }
+  playerProgress.promptIndex += 1;
+  if (playerProgress.promptIndex >= prompts.length) {
+    playerProgress.done = true;
+  }
+}
+
+function handleOddOneOutAction(player, { itemId }) {
+  const rounds = gameState.activeMiniGame?.data?.rounds || [];
+  if (!rounds.length) return;
+  const playerProgress = ensureMiniGameProgress(player.id);
+  if (!playerProgress || playerProgress.done) return;
+  const round = rounds[playerProgress.roundIndex] || rounds[rounds.length - 1];
+  if (!round) return;
+  if (itemId === round.correctId) {
+    playerProgress.hits = (playerProgress.hits || 0) + 1;
+    updateMiniGameScore(playerProgress, 90);
+  }
+  playerProgress.roundIndex += 1;
+  if (playerProgress.roundIndex >= rounds.length) {
+    playerProgress.done = true;
+  }
+}
+
+function handleMiniGameAction(player, payload = {}) {
+  if (!player || gameState.phase !== 'mini_game' || !gameState.activeMiniGame || !gameState.miniGameState) return;
+  if (!isPlayerEligible(player.id)) return;
+  const { type } = gameState.activeMiniGame;
+  if (!MINI_GAME_ALLOWED.includes(type)) return;
+  if (!payload || payload.type !== type) return;
+  if (type === 'MATCH_PAIRS') {
+    handleMatchPairsAction(player, payload);
+  } else if (type === 'SORT_ORDER') {
+    handleSortOrderAction(player, payload);
+  } else if (type === 'CATEGORY_SNAP') {
+    handleCategorySnapAction(player, payload);
+  } else if (type === 'ODD_ONE_OUT') {
+    handleOddOneOutAction(player, payload);
+  }
+  broadcastState();
+  concludeMiniGameIfFinished();
 }
 
 function buildControllerUrl() {
@@ -1029,8 +1277,8 @@ function buildStatePayload() {
     categoryVoteStats: gameState.phase === 'category_select' ? {} : computeCategoryVoteStats(),
     activeMiniGame: gameState.activeMiniGame,
     miniGameState: gameState.miniGameState,
-    miniGamesRemaining: gameState.miniGamePool.map((m) => ({ id: m.id, title: m.title })),
     miniGamesPlayed: gameState.miniGamesPlayed,
+    miniGameSchedule: gameState.miniGameSchedule,
     recentImpact: gameState.recentImpact,
     controllerUrl: buildControllerUrl(),
     maxPlayers: MAX_PLAYERS,
@@ -1345,10 +1593,10 @@ io.on('connection', (socket) => {
     beginRound();
   });
 
-  socket.on('player:miniGameTap', () => {
+  socket.on('player:miniGameAction', (payload) => {
     const player = getPlayerBySocket(socket);
     if (!player || player.status !== 'active') return;
-    recordMiniGameTap(player);
+    handleMiniGameAction(player, payload || {});
   });
 
   socket.on('disconnect', () => {

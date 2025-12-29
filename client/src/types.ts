@@ -90,6 +90,96 @@ export interface ActiveEvent {
   description?: string;
 }
 
+export type MiniGameType = 'MATCH_PAIRS' | 'SORT_ORDER' | 'CATEGORY_SNAP' | 'ODD_ONE_OUT';
+
+export interface MatchPairsCard {
+  id: string;
+  pairId: string;
+  icon: string;
+}
+
+export interface SortOrderItem {
+  id: string;
+  label: string;
+}
+
+export interface CategorySnapPrompt {
+  id: string;
+  label: string;
+  correctCategoryId: string;
+}
+
+export interface CategorySnapCategory {
+  id: string;
+  label: string;
+  icon?: string;
+}
+
+export interface OddOneOutRoundItem {
+  id: string;
+  label: string;
+}
+
+export interface OddOneOutRound {
+  id?: string;
+  items: OddOneOutRoundItem[];
+  correctId: string;
+}
+
+export interface MiniGamePayload {
+  type: MiniGameType;
+  durationMs: number;
+  data: {
+    cards?: MatchPairsCard[];
+    items?: SortOrderItem[];
+    correctOrder?: string[];
+    categories?: CategorySnapCategory[];
+    prompts?: CategorySnapPrompt[];
+    rounds?: OddOneOutRound[];
+  };
+}
+
+export interface BaseMiniGameProgress {
+  score: number;
+  done: boolean;
+}
+
+export interface MatchPairsProgress extends BaseMiniGameProgress {
+  openCardIds: string[];
+  matchedPairIds: string[];
+}
+
+export interface SortOrderProgress extends BaseMiniGameProgress {
+  order: string[];
+}
+
+export interface CategorySnapProgress extends BaseMiniGameProgress {
+  promptIndex: number;
+  hits: number;
+  misses: number;
+}
+
+export interface OddOneOutProgress extends BaseMiniGameProgress {
+  roundIndex: number;
+  hits: number;
+}
+
+export type MiniGameProgress = MatchPairsProgress | SortOrderProgress | CategorySnapProgress | OddOneOutProgress;
+
+export interface MiniGameResult {
+  playerId: string;
+  score: number;
+  done?: boolean;
+}
+
+export interface MiniGameState {
+  startedAt: number | null;
+  endsAt: number | null;
+  progress: Record<string, MiniGameProgress | undefined>;
+  results?: MiniGameResult[];
+  finished?: boolean;
+}
+
 export interface GameState {
   phase: GamePhase;
   phaseStartedAt: number | null;
@@ -115,15 +205,10 @@ export interface GameState {
   categoryVotes?: Record<string, string | undefined>;
   preQuestionReady?: Record<string, boolean>;
   categoryVoteStats?: Record<string, number>;
-  activeMiniGame?: { id: string; title: string; description?: string; scoring?: string } | null;
-  miniGameState?: {
-    id: string;
-    signalAt: number;
-    taps?: Record<string, { at: number; early?: boolean; delta?: number }>;
-    winners?: string[];
-  } | null;
-  miniGamesRemaining?: { id: string; title: string }[];
-  miniGamesPlayed?: string[];
+  activeMiniGame?: MiniGamePayload | null;
+  miniGameState?: MiniGameState | null;
+  miniGamesPlayed?: MiniGameType[];
+  miniGameSchedule?: number[];
   recentImpact?: { from?: string | null; target?: string | null; effect?: string; at: number; kind: 'ability' | 'event' } | null;
   controllerUrl?: string | null;
   maxPlayers?: number;

@@ -3,6 +3,7 @@ import QuestionPrompt from '../QuestionPrompt';
 import QuestionResults from '../QuestionResults';
 import TimerBar from '../TimerBar';
 import { Category, GameState } from '../../types';
+import MiniGameScreen from '../MiniGameScreen';
 
 interface Props {
   state: GameState;
@@ -163,36 +164,7 @@ export default function ScreenInGame({ state, activeCategory, accent, impact, fi
           </div>
         );
       case 'mini_game':
-        if (state.miniGameState) {
-          const now = Date.now();
-          const isSignal = now >= state.miniGameState.signalAt;
-          const winners = state.miniGameState.winners || [];
-          return (
-            <div className="phase-card mini-game-card">
-              <div className={`hero-text ${isSignal ? 'pop' : ''}`}>{isSignal ? 'ЖМИ!' : 'Дышим…'}</div>
-              <div className="mini-game-orb">
-                <div className={`mini-game-orb__core ${isSignal ? 'mini-game-orb__core--signal' : ''}`} />
-              </div>
-              {winners.length > 0 && (
-                <div className="pill-row pill-row--tight">
-                  {winners.map((id) => {
-                    const p = players.find((pl) => pl.id === id);
-                    return (
-                      <div key={id} className="pill pill-ready">
-                        {p?.nickname || 'Игрок'}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        }
-        return (
-          <div className="phase-card">
-            <div className="phase-note">Мини-игра...</div>
-          </div>
-        );
+        return <MiniGameScreen state={state} players={players} characters={state?.characters || []} />;
       case 'next_round_confirm':
         return (
           <div className="phase-card">
