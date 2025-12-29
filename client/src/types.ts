@@ -73,7 +73,7 @@ export interface PlayerState {
   shieldConsumed?: boolean;
   frozenUntil?: number;
   eventLock?: { type: string; cleared?: boolean } | null;
-  statusEffects?: { doublePoints?: boolean; eventShield?: boolean };
+  statusEffects?: { doublePoints?: boolean; eventShield?: boolean; hintPercentActive?: boolean; speedBonusReady?: boolean };
   preparedForQuestion?: boolean;
   status: 'active' | 'inactive' | 'offline';
   lastSeenAt?: number;

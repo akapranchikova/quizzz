@@ -28,6 +28,7 @@ export default function ControllerPage() {
   const [freezeUntil, setFreezeUntil] = useState(0);
   const [eventLock, setEventLock] = useState<{ type: string; cleared?: boolean } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
+  const [hintStats, setHintStats] = useState<{ percents: Record<string, number>; total: number; leadingOptionId: string | null } | null>(null);
   const [info, setInfo] = useState('');
   const [joinError, setJoinError] = useState('');
   const [missedRound, setMissedRound] = useState<number | null>(null);
@@ -82,6 +83,19 @@ export default function ControllerPage() {
       setInfo('Эффект очищен, можно отвечать');
     };
     const handleEventShielded = () => setInfo('Щит от события поглотил пакость');
+    const handleHintPercent = (payload: { percents: Record<string, number>; total: number; leadingOptionId: string | null }) => {
+      setHintStats(payload);
+      if (payload.total > 0 && payload.leadingOptionId) {
+        setInfo('Есть подсказка по выбору игроков');
+      }
+    };
+    const handleSpeedBonusReady = ({ windowMs }: { windowMs?: number }) => {
+      const seconds = windowMs ? Math.round(windowMs / 1000) : 3;
+      setInfo(`Рывок активирован: ответьте за ${seconds} сек.`);
+    };
+    const handleSpeedBonusAwarded = ({ bonusPoints }: { bonusPoints?: number }) => {
+      setInfo(`Рывок сработал! Бонус: +${bonusPoints || 0} очков.`);
+    };
 
     socket.on('ability:fifty', handleFifty);
     socket.on('ability:shuffleOptions', handleShuffle);
@@ -92,6 +106,9 @@ export default function ControllerPage() {
     socket.on('event:shuffleOptions', handleEventShuffle);
     socket.on('event:lockCleared', handleLockCleared);
     socket.on('event:shielded', handleEventShielded);
+    socket.on('ability:hintPercent', handleHintPercent);
+    socket.on('ability:speedBonusReady', handleSpeedBonusReady);
+    socket.on('ability:speedBonusAwarded', handleSpeedBonusAwarded);
 
     return () => {
       socket.off('ability:fifty', handleFifty);
@@ -103,6 +120,9 @@ export default function ControllerPage() {
       socket.off('event:shuffleOptions', handleEventShuffle);
       socket.off('event:lockCleared', handleLockCleared);
       socket.off('event:shielded', handleEventShielded);
+      socket.off('ability:hintPercent', handleHintPercent);
+      socket.off('ability:speedBonusReady', handleSpeedBonusReady);
+      socket.off('ability:speedBonusAwarded', handleSpeedBonusAwarded);
     };
   }, [socket]);
 
@@ -121,7 +141,8 @@ export default function ControllerPage() {
     setFreezeUntil(0);
     setInfo('');
     setActiveEvent(null);
-  }, [state?.currentQuestion?.id, state?.phase]);
+    setHintStats(null);
+  }, [state?.currentQuestion?.id]);
 
   useEffect(() => {
     setEventLock(me?.eventLock || null);
@@ -236,6 +257,12 @@ export default function ControllerPage() {
     }
     playSfx('ui_tap', { volume: 0.28 });
     socket?.emit('player:useAbility', { abilityId: ability.id, targetPlayerId });
+    if (ability.id === 'hint_percent') {
+      setInfo('Подсказка активирована — ждите статистику.');
+    }
+    if (ability.id === 'speed_bonus') {
+      setInfo('Рывок готов — отвечайте быстро!');
+    }
     return true;
   };
 
@@ -324,6 +351,7 @@ export default function ControllerPage() {
           isActivePlayer={isActivePlayer}
           accentColor={headerAccent}
           onMiniGameTap={tapMiniGame}
+          hintStats={hintStats}
         />
       )}
     </div>
@@ -442,6 +470,7 @@ interface ControllerInGameProps {
   isActivePlayer: boolean;
   accentColor: string;
   onMiniGameTap: () => void;
+  hintStats: { percents: Record<string, number>; total: number; leadingOptionId: string | null } | null;
 }
 
 function ControllerInGame({
@@ -474,6 +503,7 @@ function ControllerInGame({
   isActivePlayer,
   accentColor,
   onMiniGameTap,
+  hintStats,
 }: ControllerInGameProps) {
   const { phase, currentQuestion } = state;
   const [localAnswerId, setLocalAnswerId] = useState<string | null>(null);
@@ -594,6 +624,12 @@ function ControllerInGame({
     const endsAt = state.questionStartTime ? state.questionStartTime + timeLimitMs : null;
     const selectedOptionId = me.lastAnswer?.optionId || localAnswerId;
     const canTapAnswer = canAnswer && !localAnswerId && !me.lastAnswer;
+    const hintPercents = hintStats?.percents || {};
+    const hintLeadingOptionId = hintStats?.leadingOptionId || null;
+    const hintLeadingOption = orderedOptions.find((opt) => opt.id === hintLeadingOptionId) || null;
+    const hintLeadingLabel = hintLeadingOption ? String.fromCharCode(65 + orderedOptions.indexOf(hintLeadingOption)) : null;
+    const hintLeadingPercent = hintLeadingOptionId ? hintPercents[hintLeadingOptionId] : undefined;
+    const showHintChip = Boolean(hintStats && hintStats.total > 0 && hintLeadingLabel);
 
     const handleAnswerTap = (optionId: string) => {
       if (!canTapAnswer) return;
@@ -632,6 +668,11 @@ function ControllerInGame({
                 </button>
               </span>
             )}
+            {showHintChip && (
+              <span className="status-chip subtle">
+                Популярно: {hintLeadingLabel} ({hintLeadingPercent ?? 0}%)
+              </span>
+            )}
             {info && <span className="status-chip subtle">{info}</span>}
           </div>
         </div>
@@ -642,6 +683,7 @@ function ControllerInGame({
             const isSelected = selectedOptionId === opt.id;
             const isPressed = pressedOptionId === opt.id;
             const isDisabled = !canTapAnswer || Boolean(blockedByAbility);
+            const percent = hintPercents[opt.id];
             const classNames = [
               'answer-button',
               isSelected ? 'answer-selected' : '',
@@ -665,6 +707,12 @@ function ControllerInGame({
               >
                 <div className="answer-label">{label}</div>
                 <div className="answer-text">{opt.text}</div>
+                {typeof percent === 'number' && hintStats && (
+                  <div className="answer-meta small-muted">
+                    <span>{percent}% игроков</span>
+                    {hintLeadingOptionId === opt.id && <span className="pill pill-ghost">Лидирует</span>}
+                  </div>
+                )}
               </button>
             );
           })}

@@ -40,11 +40,15 @@ const MINI_GAME_SIGNAL_MIN_MS = 1200;
 const MINI_GAME_SIGNAL_MAX_MS = 2600;
 const MINI_GAME_BONUS_FIRST = 140;
 const MINI_GAME_BONUS_SECOND = 90;
+const SPEED_BONUS_WINDOW_MS = 3000;
+const SPEED_BONUS_POINTS = 200;
 const CHARACTER_THEMES = {
   spark: { art: '/assets/characters/spark.png', accent: '#f97316' },
   glitch: { art: '/assets/characters/glitch.png', accent: '#22d3ee' },
   frost: { art: '/assets/characters/frost.png', accent: '#38bdf8' },
   shieldy: { art: '/assets/characters/shieldy.png', accent: '#a3e635' },
+  echo: { art: '/assets/characters/echo.png', accent: '#c084fc' },
+  blitz: { art: '/assets/characters/blitz.png', accent: '#fde047' },
 };
 
 const CATEGORY_THEMES = {
@@ -358,7 +362,7 @@ function resetGame(keepPlayers = true) {
       player.abilityUses = getAbilityUses(player.characterId);
       player.shieldConsumed = false;
       player.eventLock = null;
-      player.statusEffects = { doublePoints: false, eventShield: false };
+      player.statusEffects = { doublePoints: false, eventShield: false, hintPercentActive: false, speedBonusReady: false };
       player.preparedForQuestion = false;
       player.status = player.status || 'active';
       player.lastSeenAt = Date.now();
@@ -420,6 +424,35 @@ function computeCategoryVoteStats() {
     stats[categoryId] = (stats[categoryId] || 0) + 1;
   }
   return stats;
+}
+
+function buildHintPercentStats(excludePlayerId = null) {
+  const counts = {};
+  for (const [playerId, answer] of Object.entries(gameState.answers || {})) {
+    if (!answer?.optionId) continue;
+    if (excludePlayerId && playerId === excludePlayerId) continue;
+    counts[answer.optionId] = (counts[answer.optionId] || 0) + 1;
+  }
+  const total = Object.values(counts).reduce((acc, count) => acc + count, 0);
+  const percents = Object.fromEntries(
+    Object.entries(counts).map(([optionId, count]) => [optionId, total ? Math.round((count / total) * 100) : 0])
+  );
+  const leadingOptionId = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  return { percents, total, leadingOptionId };
+}
+
+function emitHintPercentToPlayer(player) {
+  if (!player?.socketId || !player.statusEffects?.hintPercentActive) return;
+  const payload = buildHintPercentStats(player.id);
+  io.to(player.socketId).emit('ability:hintPercent', payload);
+}
+
+function emitHintPercentToSubscribers() {
+  for (const player of gameState.players.values()) {
+    if (player.statusEffects?.hintPercentActive) {
+      emitHintPercentToPlayer(player);
+    }
+  }
 }
 
 function chooseCategoryOptions() {
@@ -645,7 +678,7 @@ function prepareForMatch() {
     player.shieldConsumed = false;
     player.abilityUses = getAbilityUses(player.characterId);
     player.preparedForQuestion = false;
-    player.statusEffects = { doublePoints: false, eventShield: false };
+    player.statusEffects = { doublePoints: false, eventShield: false, hintPercentActive: false, speedBonusReady: false };
   }
 }
 
@@ -692,7 +725,7 @@ function beginRound() {
   clearPlayerEventLocks();
   for (const player of gameState.players.values()) {
     player.preparedForQuestion = false;
-    player.statusEffects = { doublePoints: false, eventShield: false };
+    player.statusEffects = { doublePoints: false, eventShield: false, hintPercentActive: false, speedBonusReady: false };
   }
   setPhase('round_intro', ROUND_INTRO_DURATION_MS);
 }
@@ -805,6 +838,12 @@ function startNextRoundConfirm() {
   gameState.activeMiniGame = null;
   gameState.miniGameState = null;
   clearPlayerEventLocks();
+  for (const player of gameState.players.values()) {
+    if (player.statusEffects) {
+      player.statusEffects.hintPercentActive = false;
+      player.statusEffects.speedBonusReady = false;
+    }
+  }
   setPhase('next_round_confirm', NEXT_ROUND_CONFIRM_DURATION_MS);
 }
 
@@ -1010,11 +1049,22 @@ function revealQuestion() {
       const multiplier = calculateMultiplier(answer.answerTimeMs, question.timeLimitSec || 15);
       const basePoints = Math.round(BASE_POINTS * multiplier);
       const doublePoints = player.statusEffects?.doublePoints ? 2 : 1;
-      const points = Math.round(basePoints * doublePoints);
+      let points = Math.round(basePoints * doublePoints);
+      let speedBonusAwarded = false;
+      if (player.statusEffects?.speedBonusReady && answer.answerTimeMs <= SPEED_BONUS_WINDOW_MS) {
+        points += SPEED_BONUS_POINTS;
+        speedBonusAwarded = true;
+      }
       player.score += points;
       answer.pointsEarned = points;
+      if (speedBonusAwarded && player.socketId) {
+        io.to(player.socketId).emit('ability:speedBonusAwarded', { bonusPoints: SPEED_BONUS_POINTS });
+      }
     } else if (WRONG_PENALTY) {
       player.score += WRONG_PENALTY;
+    }
+    if (player.statusEffects?.speedBonusReady) {
+      player.statusEffects.speedBonusReady = false;
     }
   }
 
@@ -1102,6 +1152,22 @@ function handleAbilityUse(player, { abilityId, targetPlayerId }) {
     gameState.recentImpact = { from: player.id, target: targetPlayerId, effect: 'freeze_enemy', at: Date.now(), kind: 'ability' };
   }
 
+  if (abilityId === 'hint_percent') {
+    decrementUse();
+    player.statusEffects = { ...(player.statusEffects || {}), hintPercentActive: true };
+    emitHintPercentToPlayer(player);
+    gameState.recentImpact = { from: player.id, target: player.id, effect: 'hint_percent', at: Date.now(), kind: 'ability' };
+  }
+
+  if (abilityId === 'speed_bonus') {
+    decrementUse();
+    player.statusEffects = { ...(player.statusEffects || {}), speedBonusReady: true };
+    if (player.socketId) {
+      io.to(player.socketId).emit('ability:speedBonusReady', { windowMs: SPEED_BONUS_WINDOW_MS, bonusPoints: SPEED_BONUS_POINTS });
+    }
+    gameState.recentImpact = { from: player.id, target: player.id, effect: 'speed_bonus', at: Date.now(), kind: 'ability' };
+  }
+
   broadcastState();
 }
 
@@ -1167,7 +1233,7 @@ io.on('connection', (socket) => {
       frozenUntil: 0,
       eventLock: null,
       preparedForQuestion: false,
-      statusEffects: { doublePoints: false, eventShield: false },
+      statusEffects: { doublePoints: false, eventShield: false, hintPercentActive: false, speedBonusReady: false },
       status: 'active',
       resumeToken,
       lastSeenAt: Date.now(),
@@ -1242,6 +1308,7 @@ io.on('connection', (socket) => {
     const answerTimeMs = now - gameState.questionStartTime;
     gameState.answers[player.id] = { optionId, answerTimeMs };
     gameState.answerStats[optionId] = (gameState.answerStats[optionId] || 0) + 1;
+    emitHintPercentToSubscribers();
     if (haveAllPlayersAnswered()) {
       revealQuestion();
     } else {
