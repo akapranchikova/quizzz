@@ -6,6 +6,7 @@ import { Ability, ActiveEvent, Category, Character, GameState, PlayerState, Ques
 import TimerBar from '../components/TimerBar';
 import HoldToConfirmButton, { DEFAULT_HOLD_MS } from '../components/HoldToConfirmButton';
 import { isSoundUnlocked, onSoundUnlocked, playSfx, unlockSound } from '../utils/sound';
+import MiniGameController from '../components/MiniGameController';
 
 function reorderOptions(options: QuestionOption[], order?: string[] | null) {
   if (!order || !order.length) return options;
@@ -221,10 +222,10 @@ export default function ControllerPage() {
     socket?.emit('player:continueNextRound');
   };
 
-  const tapMiniGame = () => {
+  const onMiniGameAction = (payload: any) => {
     if (!socket || state?.phase !== 'mini_game') return;
     playSfx('ui_tap', { volume: 0.32 });
-    socket.emit('player:miniGameTap');
+    socket.emit('player:miniGameAction', payload);
   };
 
   const currentQuestion = state?.currentQuestion;
@@ -350,7 +351,7 @@ export default function ControllerPage() {
           missedRound={missedRound}
           isActivePlayer={isActivePlayer}
           accentColor={headerAccent}
-          onMiniGameTap={tapMiniGame}
+          onMiniGameAction={onMiniGameAction}
           hintStats={hintStats}
         />
       )}
@@ -469,7 +470,7 @@ interface ControllerInGameProps {
   missedRound: number | null;
   isActivePlayer: boolean;
   accentColor: string;
-  onMiniGameTap: () => void;
+  onMiniGameAction: (payload: any) => void;
   hintStats: { percents: Record<string, number>; total: number; leadingOptionId: string | null } | null;
 }
 
@@ -502,7 +503,7 @@ function ControllerInGame({
   missedRound,
   isActivePlayer,
   accentColor,
-  onMiniGameTap,
+  onMiniGameAction,
   hintStats,
 }: ControllerInGameProps) {
   const { phase, currentQuestion } = state;
@@ -565,22 +566,14 @@ function ControllerInGame({
   }
 
   if (phase === 'mini_game') {
-    const signalAt = state.miniGameState?.signalAt || 0;
-    const isSignaled = signalAt > 0 && Date.now() >= signalAt;
-    const winners = state.miniGameState?.winners || [];
-    const roster = me ? [me, ...otherPlayers] : otherPlayers;
     return (
-      <div className="controller-stage controller-centered">
-        <div className={`mini-game-prompt ${isSignaled ? 'mini-game-prompt--ready' : ''}`} onClick={onMiniGameTap}>
-          <div className="mini-game-prompt__ring" />
-          <div className="mini-game-prompt__label">{isSignaled ? 'ЖМИ' : 'Жди'}</div>
-        </div>
-        {winners.length > 0 && (
-          <div className="info-banner subtle">
-            Быстрее всех: {winners.map((id) => roster.find((p) => p.id === id)?.nickname || 'Игрок').join(', ')}
-          </div>
-        )}
-      </div>
+      <MiniGameController
+        state={state}
+        me={me}
+        accentColor={accentColor}
+        onAction={onMiniGameAction}
+        statusBanner={statusBanner}
+      />
     );
   }
 
