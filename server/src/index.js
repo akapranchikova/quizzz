@@ -203,6 +203,14 @@ function cleanupPlayerState(playerId) {
   delete gameState.answers[playerId];
 }
 
+function clearPlayerEventLocks() {
+  for (const player of gameState.players.values()) {
+    if (player.eventLock) {
+      player.eventLock = null;
+    }
+  }
+}
+
 function scheduleOfflineStatus(player) {
   clearGraceTimer(player.id);
   reconnectTimers.set(
@@ -612,11 +620,11 @@ function prepareForMatch() {
   gameState.activeMiniGame = null;
   gameState.categoryOptions = chooseCategoryOptions();
   gameState.phaseEligiblePlayerIds = null;
+  clearPlayerEventLocks();
   for (const player of gameState.players.values()) {
     player.score = 0;
     player.shieldConsumed = false;
     player.abilityUses = getAbilityUses(player.characterId);
-    player.eventLock = null;
     player.preparedForQuestion = false;
     player.statusEffects = { doublePoints: false, eventShield: false };
   }
@@ -662,8 +670,8 @@ function beginRound() {
   gameState.activeEvent = null;
   gameState.allCorrectBonusActive = false;
   gameState.categoryOptions = chooseCategoryOptions();
+  clearPlayerEventLocks();
   for (const player of gameState.players.values()) {
-    player.eventLock = null;
     player.preparedForQuestion = false;
     player.statusEffects = { doublePoints: false, eventShield: false };
   }
@@ -739,9 +747,6 @@ function startQuestion(question) {
   gameState.categoryVotes = {};
   for (const player of gameState.players.values()) {
     player.frozenUntil = 0;
-    if (player.eventLock) {
-      player.eventLock = null;
-    }
   }
   io.emit('server:question', sanitizeQuestion(question, 'question'));
   const limitMs = (question.timeLimitSec || QUESTION_DURATION_FALLBACK_MS / 1000) * 1000;
@@ -779,6 +784,7 @@ function startNextRoundConfirm() {
   gameState.preQuestionReady = {};
   gameState.allCorrectBonusActive = false;
   gameState.activeMiniGame = null;
+  clearPlayerEventLocks();
   setPhase('next_round_confirm', NEXT_ROUND_CONFIRM_DURATION_MS);
 }
 
@@ -969,6 +975,7 @@ function maybeEndGame() {
   const noQuestionsLeft = gameState.usedQuestionIds.size >= (gameState.questions || []).length;
   const reachedMaxRounds = gameState.roundNumber >= gameState.maxRounds;
   if (noQuestionsLeft || reachedMaxRounds) {
+    clearPlayerEventLocks();
     setPhase('game_end');
     return true;
   }
@@ -1173,7 +1180,7 @@ io.on('connection', (socket) => {
   socket.on('player:clearEventLock', () => {
     const player = getPlayerBySocket(socket);
     if (!player || player.status !== 'active' || !player.eventLock) return;
-    player.eventLock.cleared = true;
+    player.eventLock = null;
     io.to(socket.id).emit('event:lockCleared');
     broadcastState();
   });
