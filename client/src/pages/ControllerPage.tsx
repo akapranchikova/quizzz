@@ -273,18 +273,7 @@ export default function ControllerPage() {
   const headerAccent = headerCharacter?.accent || '#22d3ee';
 
   return (
-    <div className="controller-screen" onPointerDownCapture={handleUnlockSound}>
-      {headerCharacter && (
-        <div className="controller-header" style={{ ['--accent' as string]: headerAccent }}>
-          <div className="controller-header__thumb">
-            {headerCharacter.art ? <img src={headerCharacter.art} alt={headerCharacter.name} /> : <span>{headerCharacter.icon || '✨'}</span>}
-          </div>
-          <div className="controller-header__meta">
-            <div className="small-muted">Ваш персонаж</div>
-            <div className="controller-header__name">{headerCharacter.name}</div>
-          </div>
-        </div>
-      )}
+    <div className="controller-root" onPointerDownCapture={handleUnlockSound}>
       {controllerMode === 'join' && (
         <ControllerJoin
           characters={state?.characters || []}
@@ -355,7 +344,7 @@ interface ControllerJoinProps {
 function ControllerJoin({ characters, nickname, characterId, onNicknameChange, onCharacterChange, onJoin, error, isCharacterSupported }: ControllerJoinProps) {
   const isJoinDisabled = !nickname || !isCharacterSupported;
   return (
-    <div className="controller-stage controller-stage--flow controller-stage--stack">
+    <div className="controller-stage controller-stage--flow controller-stage--stack controller-stage--join">
       <div className="controller-title">Войти</div>
       <div className="controller-stack">
         <div className="character-grid">
@@ -379,16 +368,18 @@ function ControllerJoin({ characters, nickname, characterId, onNicknameChange, o
             </button>
           ))}
         </div>
-        <div className="stacked-inputs">
+        <div className="stacked-inputs controller-join__inputs">
           <input className="input" value={nickname} onChange={(e) => onNicknameChange(e.target.value)} placeholder="Имя" />
           <button className="button-primary cta-button primary-action controller-main-button tappable" onClick={onJoin} disabled={isJoinDisabled}>
             Войти
           </button>
         </div>
-        {characters.length > 0 && !isCharacterSupported && (
-          <div className="alert-warning">Этот персонаж недоступен. Выберите другого.</div>
-        )}
-        {error && <div className="alert-warning">{error}</div>}
+        {(characters.length > 0 && !isCharacterSupported) || error ? (
+          <div className="controller-join__footer">
+            {characters.length > 0 && !isCharacterSupported && <div className="alert-warning">Этот персонаж недоступен. Выберите другого.</div>}
+            {error && <div className="alert-warning">{error}</div>}
+          </div>
+        ) : null}
       </div>
     </div>
   );
