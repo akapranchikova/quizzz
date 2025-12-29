@@ -6,7 +6,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { io } from 'socket.io-client';
 
 const TEST_PORT = 5199;
-const SERVER_URL = `http://127.0.0.1:${TEST_PORT}`;
 
 async function waitForHealth(url) {
   const deadline = Date.now() + 10_000;
@@ -25,10 +24,14 @@ async function waitForHealth(url) {
   throw new Error('Healthcheck did not respond in time');
 }
 
-function startServer(t) {
+function buildServerUrl(port) {
+  return `http://127.0.0.1:${port}`;
+}
+
+function startServer(t, port = TEST_PORT) {
   const child = spawn('node', ['src/index.js'], {
     cwd: new URL('../', import.meta.url),
-    env: { ...process.env, PORT: TEST_PORT, MIN_PLAYERS_TO_START: '2' },
+    env: { ...process.env, PORT: port, MIN_PLAYERS_TO_START: '2' },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
 
@@ -41,12 +44,14 @@ function startServer(t) {
   return child;
 }
 
-function createSocket() {
-  return io(SERVER_URL, { transports: ['websocket'], autoConnect: true });
+function createSocket(port = TEST_PORT) {
+  return io(buildServerUrl(port), { transports: ['websocket'], autoConnect: true });
 }
 
 async function joinPlayer(socket, nickname) {
-  await once(socket, 'connect');
+  if (!socket.connected) {
+    await once(socket, 'connect');
+  }
   return new Promise((resolve, reject) => {
     socket.emit(
       'player:join',
@@ -64,7 +69,7 @@ async function joinPlayer(socket, nickname) {
 
 async function waitForPhase(socket, phase, timeoutMs = 10_000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out waiting for phase ${phase}`)), timeoutMs);
+    let timer = null;
     const handler = (payload) => {
       if (payload?.phase === phase) {
         clearTimeout(timer);
@@ -72,16 +77,21 @@ async function waitForPhase(socket, phase, timeoutMs = 10_000) {
         resolve(payload);
       }
     };
+    timer = setTimeout(() => {
+      socket.off('server:state', handler);
+      reject(new Error(`Timed out waiting for phase ${phase}`));
+    }, timeoutMs);
     socket.on('server:state', handler);
   });
 }
 
-test('server healthcheck responds and players can start a match', async (t) => {
-  startServer(t);
-  await waitForHealth(SERVER_URL);
+test('server healthcheck responds and players can start a match', { concurrency: false }, async (t) => {
+  const port = TEST_PORT;
+  startServer(t, port);
+  await waitForHealth(buildServerUrl(port));
 
-  const playerOne = createSocket();
-  const playerTwo = createSocket();
+  const playerOne = createSocket(port);
+  const playerTwo = createSocket(port);
 
   t.after(() => {
     playerOne.close();
@@ -102,4 +112,40 @@ test('server healthcheck responds and players can start a match', async (t) => {
 
   const categoryPhase = await waitForPhase(playerOne, 'category_select');
   assert.equal(categoryPhase.phase, 'category_select');
+});
+
+test('game does not start when an active player is not ready', { concurrency: false }, async (t) => {
+  const port = TEST_PORT + 1;
+  startServer(t, port);
+  await waitForHealth(buildServerUrl(port));
+
+  const playerOne = createSocket(port);
+  const playerTwo = createSocket(port);
+  const playerThree = createSocket(port);
+  let lastState = null;
+  const trackState = (payload) => {
+    lastState = payload;
+  };
+  playerOne.on('server:state', trackState);
+
+  t.after(() => {
+    playerOne.off('server:state', trackState);
+    playerOne.close();
+    playerTwo.close();
+    playerThree.close();
+  });
+
+  await Promise.all([joinPlayer(playerOne, 'ReadyOne'), joinPlayer(playerTwo, 'ReadyTwo')]);
+
+  playerOne.emit('player:ready', true);
+  playerTwo.emit('player:ready', true);
+
+  await waitForPhase(playerOne, 'game_start_confirm');
+
+  await joinPlayer(playerThree, 'NotReady');
+
+  playerOne.emit('player:startGame');
+
+  await assert.rejects(waitForPhase(playerOne, 'round_intro', 1000), /Timed out waiting for phase round_intro/);
+  assert.equal(lastState?.phase, 'game_start_confirm');
 });

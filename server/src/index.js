@@ -418,8 +418,8 @@ function updateNarrationForPhase(phase) {
   const displayRound = Math.max(1, gameState.roundNumber);
   const phrases = {
     lobby: 'Подключение игроков',
-    ready: 'Нажмите «Готов» на своих устройствах',
-    game_start_confirm: 'Все готовы. Любой игрок может начать игру',
+    ready: 'Нажмите «Готов» — начать можно, только когда все активные игроки отметятся',
+    game_start_confirm: 'Все активные игроки готовы. Любой игрок может начать игру',
     round_intro: `Раунд ${displayRound} начинается`,
     category_select: `Раунд ${displayRound} из ${gameState.maxRounds}: выбираем категорию`,
     category_reveal: 'Категория выбрана',
@@ -1131,7 +1131,7 @@ io.on('connection', (socket) => {
 
   socket.on('player:startGame', () => {
     if (gameState.phase !== 'game_start_confirm') return;
-    if (!readyCountMeetsMinimum()) return;
+    if (!hasEnoughReadyPlayers()) return;
     beginRound();
   });
 
