@@ -2,11 +2,15 @@ interface Props {
   accent?: string;
   tense?: boolean;
   pulseKey?: number;
+  finale?: boolean;
 }
 
-export default function ScreenBackground({ accent, tense, pulseKey }: Props) {
+export default function ScreenBackground({ accent, tense, pulseKey, finale }: Props) {
   return (
-    <div className={`screen-bg ${tense ? 'screen-bg--tense' : ''}`} style={{ ['--accent' as string]: accent || '#6366f1' }}>
+    <div
+      className={`screen-bg ${tense ? 'screen-bg--tense' : ''} ${finale ? 'screen-bg--finale' : ''}`}
+      style={{ ['--accent' as string]: accent || '#6366f1' }}
+    >
       <div className="screen-gradient" />
       <div className="screen-gradient screen-gradient--accent" key={pulseKey} />
       <div className="screen-noise" />

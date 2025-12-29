@@ -116,8 +116,15 @@ export interface GameState {
   preQuestionReady?: Record<string, boolean>;
   categoryVoteStats?: Record<string, number>;
   activeMiniGame?: { id: string; title: string; description?: string; scoring?: string } | null;
+  miniGameState?: {
+    id: string;
+    signalAt: number;
+    taps?: Record<string, { at: number; early?: boolean; delta?: number }>;
+    winners?: string[];
+  } | null;
   miniGamesRemaining?: { id: string; title: string }[];
   miniGamesPlayed?: string[];
+  recentImpact?: { from?: string | null; target?: string | null; effect?: string; at: number; kind: 'ability' | 'event' } | null;
   controllerUrl?: string | null;
   maxPlayers?: number;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
 import { usePhaseEffects } from '../hooks/usePhaseEffects';
+import { usePacedState } from '../hooks/usePacedState';
 import { Ability, ActiveEvent, Category, Character, GameState, PlayerState, QuestionOption } from '../types';
 import TimerBar from '../components/TimerBar';
 import HoldToConfirmButton, { DEFAULT_HOLD_MS } from '../components/HoldToConfirmButton';
@@ -18,6 +19,7 @@ type ControllerMode = 'join' | 'ready' | 'wait_start' | 'start' | 'in_game';
 
 export default function ControllerPage() {
   const { socket, state, connected, playerId, persistIdentity } = useSocket();
+  const visualState = usePacedState(state);
   const [nickname, setNickname] = useState('');
   const [characterId, setCharacterId] = useState('spark');
   const [targetPlayerId, setTargetPlayerId] = useState('');
@@ -32,13 +34,13 @@ export default function ControllerPage() {
   const [soundReady, setSoundReady] = useState(isSoundUnlocked());
 
   const me = state?.players.find((p) => p.id === playerId);
-  const myCharacter = state?.characters.find((c) => c.id === (me?.characterId || characterId));
+  const myCharacter = (visualState || state)?.characters.find((c) => c.id === (me?.characterId || characterId));
   const ability: Ability | undefined = myCharacter?.ability;
   const abilityUses = me?.abilityUses?.[ability?.id || ''] ?? ability?.usesPerGame ?? 0;
   const isActivePlayer = me?.status === 'active';
   const hasAnswered = Boolean(me?.lastAnswer);
   const preparedForQuestion = me ? Boolean(state?.preQuestionReady?.[me.id] || me.preparedForQuestion) : false;
-  const availableCharacters = state?.characters || [];
+  const availableCharacters = (visualState || state)?.characters || [];
   const isCharacterSupported = availableCharacters.some((c) => c.id === characterId);
 
   useEffect(() => {
@@ -151,7 +153,7 @@ export default function ControllerPage() {
     setSoundReady(isSoundUnlocked());
   };
 
-  usePhaseEffects(state, {
+  usePhaseEffects(visualState, {
     onLastSeconds: (remaining, phase) => {
       if (phase !== 'question') return;
       playSfx('tick', { volume: 0.2, rate: 1 + (3 - remaining) * 0.05 });
@@ -198,6 +200,12 @@ export default function ControllerPage() {
     socket?.emit('player:continueNextRound');
   };
 
+  const tapMiniGame = () => {
+    if (!socket || state?.phase !== 'mini_game') return;
+    playSfx('ui_tap', { volume: 0.32 });
+    socket.emit('player:miniGameTap');
+  };
+
   const currentQuestion = state?.currentQuestion;
   const orderedOptions = currentQuestion ? reorderOptions(currentQuestion.options, optionOrder) : [];
   const freezeActive = freezeUntil > Date.now();
@@ -240,7 +248,7 @@ export default function ControllerPage() {
 
   const otherPlayers = useMemo(() => state?.players.filter((p) => p.id !== me?.id) || [], [state?.players, me]);
   const myVote = me?.id ? state?.categoryVotes?.[me.id] : undefined;
-  const categoriesForVote = (state?.categoryOptions?.length ? state.categoryOptions : state?.categories || []).slice(0, 4);
+  const categoriesForVote = (visualState?.categoryOptions?.length ? visualState.categoryOptions : visualState?.categories || []).slice(0, 4);
 
   const voteForCategory = (categoryId: string) => {
     if (!me || !socket || state?.phase !== 'category_select' || !canParticipate) return;
@@ -256,11 +264,11 @@ export default function ControllerPage() {
 
   const controllerMode: ControllerMode = useMemo(() => {
     if (!me) return 'join';
-    if (state?.phase === 'game_start_confirm') return 'start';
+    if (visualState?.phase === 'game_start_confirm') return 'start';
     if (!me.ready) return 'ready';
-    if (state?.phase === 'lobby' || state?.phase === 'ready' || state?.phase === 'game_end') return 'wait_start';
+    if (visualState?.phase === 'lobby' || visualState?.phase === 'ready' || visualState?.phase === 'game_end') return 'wait_start';
     return 'in_game';
-  }, [me, state?.phase]);
+  }, [me, visualState?.phase]);
   const headerCharacter = myCharacter || availableCharacters.find((c) => c.id === characterId) || null;
   const headerAccent = headerCharacter?.accent || '#22d3ee';
 
@@ -296,9 +304,9 @@ export default function ControllerPage() {
 
       {controllerMode === 'start' && <ControllerStartButton onStart={startGame} />}
 
-      {controllerMode === 'in_game' && state && me && (
+      {controllerMode === 'in_game' && visualState && me && (
         <ControllerInGame
-          state={state}
+          state={visualState}
           me={me}
           ability={ability}
           abilityUses={abilityUses}
@@ -326,6 +334,7 @@ export default function ControllerPage() {
           missedRound={missedRound}
           isActivePlayer={isActivePlayer}
           accentColor={headerAccent}
+          onMiniGameTap={tapMiniGame}
         />
       )}
     </div>
@@ -441,6 +450,7 @@ interface ControllerInGameProps {
   missedRound: number | null;
   isActivePlayer: boolean;
   accentColor: string;
+  onMiniGameTap: () => void;
 }
 
 function ControllerInGame({
@@ -472,6 +482,7 @@ function ControllerInGame({
   missedRound,
   isActivePlayer,
   accentColor,
+  onMiniGameTap,
 }: ControllerInGameProps) {
   const { phase, currentQuestion } = state;
   const [localAnswerId, setLocalAnswerId] = useState<string | null>(null);
@@ -505,13 +516,13 @@ function ControllerInGame({
           <TimerBar
             startsAt={state.phaseStartedAt}
             endsAt={state.phaseEndsAt}
-            label="Выбор категории"
+            label="Выбор"
             accent={accentColor}
           />
         )}
         {statusBanner}
         <div className="controller-stack">
-          <div className="controller-title">Выберите категорию</div>
+          <div className="controller-title">Ваш выбор</div>
           <div className="mobile-answer-grid">
             {categoriesForVote.map((cat) => {
               const isMine = myVote === cat.id;
@@ -528,6 +539,26 @@ function ControllerInGame({
             })}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (phase === 'mini_game') {
+    const signalAt = state.miniGameState?.signalAt || 0;
+    const isSignaled = signalAt > 0 && Date.now() >= signalAt;
+    const winners = state.miniGameState?.winners || [];
+    const roster = me ? [me, ...otherPlayers] : otherPlayers;
+    return (
+      <div className="controller-stage controller-centered">
+        <div className={`mini-game-prompt ${isSignaled ? 'mini-game-prompt--ready' : ''}`} onClick={onMiniGameTap}>
+          <div className="mini-game-prompt__ring" />
+          <div className="mini-game-prompt__label">{isSignaled ? 'ЖМИ' : 'Жди'}</div>
+        </div>
+        {winners.length > 0 && (
+          <div className="info-banner subtle">
+            Быстрее всех: {winners.map((id) => roster.find((p) => p.id === id)?.nickname || 'Игрок').join(', ')}
+          </div>
+        )}
       </div>
     );
   }

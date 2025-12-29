@@ -31,11 +31,15 @@ const ABILITY_PHASE_DURATION_MS = 8000;
 const QUESTION_DURATION_FALLBACK_MS = 15000;
 const ANSWER_REVEAL_DURATION_MS = 5500;
 const SCORE_DURATION_MS = 4500;
-const INTERMISSION_DURATION_MS = 6000;
-const MINI_GAME_DURATION_MS = 9000;
+const INTERMISSION_DURATION_MS = 2200;
+const MINI_GAME_DURATION_MS = 4800;
 const NEXT_ROUND_CONFIRM_DURATION_MS = 8000;
 const ALL_CORRECT_BONUS_POINTS = 350;
 const RESUME_GRACE_PERIOD_MS = 45000;
+const MINI_GAME_SIGNAL_MIN_MS = 1200;
+const MINI_GAME_SIGNAL_MAX_MS = 2600;
+const MINI_GAME_BONUS_FIRST = 140;
+const MINI_GAME_BONUS_SECOND = 90;
 const CHARACTER_THEMES = {
   spark: { art: '/assets/characters/spark.png', accent: '#f97316' },
   glitch: { art: '/assets/characters/glitch.png', accent: '#22d3ee' },
@@ -94,6 +98,8 @@ const gameState = {
   miniGamePool: [],
   activeMiniGame: null,
   miniGamesPlayed: [],
+  miniGameState: null,
+  recentImpact: null,
   phaseEligiblePlayerIds: null,
 };
 
@@ -152,33 +158,6 @@ const RANDOM_EVENTS = [
     kind: 'buff',
     requiresTarget: true,
     description: 'Следующая пакость проигнорируется выбранным игроком.',
-  },
-];
-
-const MINI_GAMES = [
-  {
-    id: 'match_pairs',
-    title: 'MATCH PAIRS',
-    description: 'Собери пары логически связанных карточек',
-    scoring: '+300 за пару, +500 первому, кто закончит',
-  },
-  {
-    id: 'sort_order',
-    title: 'SORT ORDER',
-    description: 'Расставьте элементы в правильном порядке',
-    scoring: 'Идеально: +800, одна ошибка: +400',
-  },
-  {
-    id: 'find_the_odd',
-    title: 'FIND THE ODD',
-    description: 'Найдите элемент, который не подходит',
-    scoring: 'Верно: +500, иначе 0',
-  },
-  {
-    id: 'sort_to_zones',
-    title: 'SORT TO ZONES',
-    description: 'Разложите карточки по 2–3 зонам',
-    scoring: '+200 за верный элемент, +400 за идеал',
   },
 ];
 
@@ -332,7 +311,7 @@ async function loadData() {
   gameState.questions = questionsData.questions || [];
   gameState.categoryOptions = chooseCategoryOptions();
   gameState.characters = enrichCharacters(charactersData.characters || []);
-  gameState.miniGamePool = MINI_GAMES.slice();
+  gameState.miniGamePool = [{ id: 'tap_signal', title: 'WAIT...TAP' }];
   for (const player of gameState.players.values()) {
     player.abilityUses = getAbilityUses(player.characterId);
     player.status = player.status || 'active';
@@ -364,9 +343,11 @@ function resetGame(keepPlayers = true) {
   gameState.activeEvent = null;
   gameState.allCorrectBonusActive = false;
   gameState.recentCategoryIds = [];
-  gameState.miniGamePool = MINI_GAMES.slice();
+  gameState.miniGamePool = [{ id: 'tap_signal', title: 'WAIT...TAP' }];
   gameState.activeMiniGame = null;
   gameState.miniGamesPlayed = [];
+  gameState.miniGameState = null;
+  gameState.recentImpact = null;
   gameState.phaseEligiblePlayerIds = null;
   if (!keepPlayers) {
     gameState.players.clear();
@@ -460,21 +441,21 @@ function chooseCategoryOptions() {
 function updateNarrationForPhase(phase) {
   const displayRound = Math.max(1, gameState.roundNumber);
   const phrases = {
-    lobby: 'Подключение игроков',
-    ready: 'Нажмите «Готов» — начать можно, только когда все активные игроки отметятся',
-    game_start_confirm: 'Все активные игроки готовы. Любой игрок может начать игру',
-    round_intro: `Раунд ${displayRound} начинается`,
-    category_select: `Раунд ${displayRound} из ${gameState.maxRounds}: выбираем категорию`,
-    category_reveal: 'Категория выбрана',
-    random_event: 'Случайное событие',
-    ability_phase: 'Подготовка перед вопросом',
-    question: 'Вопрос: отвечайте как можно быстрее',
-    answer_reveal: 'Показ правильного ответа',
-    score: 'Очки летят к игрокам',
-    intermission: 'Перерыв: мини-игра на подходе',
-    mini_game: gameState.activeMiniGame ? `Мини-игра: ${gameState.activeMiniGame.title}` : 'Мини-игра',
-    next_round_confirm: 'Подтвердите следующий раунд',
-    game_end: 'Игра завершена',
+    lobby: 'Подключение',
+    ready: 'Готовность',
+    game_start_confirm: 'Старт по удержанию',
+    round_intro: `Раунд ${displayRound}`,
+    category_select: `Выбор ${displayRound}/${gameState.maxRounds}`,
+    category_reveal: 'Категория готова',
+    random_event: 'Событие',
+    ability_phase: 'Подготовка',
+    question: 'Поехали',
+    answer_reveal: 'Ответ открыт',
+    score: 'Очки летят',
+    intermission: 'Пауза',
+    mini_game: 'Миг мини-игры',
+    next_round_confirm: 'Далее?',
+    game_end: 'Финал',
   };
   gameState.narration = phrases[phase] || 'Идём дальше';
 }
@@ -550,6 +531,7 @@ function handlePhaseTimeout(expectedPhase) {
     return;
   }
   if (expectedPhase === 'mini_game') {
+    finalizeMiniGame();
     startNextRoundConfirm();
     return;
   }
@@ -650,9 +632,11 @@ function prepareForMatch() {
   gameState.activeEvent = null;
   gameState.recentCategoryIds = [];
   gameState.allCorrectBonusActive = false;
-  gameState.miniGamePool = MINI_GAMES.slice();
+  gameState.miniGamePool = [{ id: 'tap_signal', title: 'WAIT...TAP' }];
   gameState.miniGamesPlayed = [];
   gameState.activeMiniGame = null;
+  gameState.miniGameState = null;
+  gameState.recentImpact = null;
   gameState.categoryOptions = chooseCategoryOptions();
   gameState.phaseEligiblePlayerIds = null;
   clearPlayerEventLocks();
@@ -819,6 +803,7 @@ function startNextRoundConfirm() {
   gameState.preQuestionReady = {};
   gameState.allCorrectBonusActive = false;
   gameState.activeMiniGame = null;
+  gameState.miniGameState = null;
   clearPlayerEventLocks();
   setPhase('next_round_confirm', NEXT_ROUND_CONFIRM_DURATION_MS);
 }
@@ -829,19 +814,38 @@ function pickMiniGame() {
   return shuffled[0];
 }
 
+function finalizeMiniGame() {
+  const miniGame = gameState.miniGameState;
+  if (!miniGame || miniGame.id !== 'tap_signal') return;
+  const taps = Object.entries(miniGame.taps || {}).filter(([, tap]) => !tap.early && typeof tap.delta === 'number');
+  if (!taps.length) return;
+  const ranked = taps.sort((a, b) => (a[1].delta || 0) - (b[1].delta || 0));
+  const winners = ranked.slice(0, 2).map(([playerId]) => playerId);
+  miniGame.winners = winners;
+  winners.forEach((playerId, idx) => {
+    const bonus = idx === 0 ? MINI_GAME_BONUS_FIRST : MINI_GAME_BONUS_SECOND;
+    const player = gameState.players.get(playerId);
+    if (player) {
+      player.score += bonus;
+    }
+  });
+  computeLeaderboard();
+  gameState.recentImpact = { from: winners[0] || null, target: null, effect: 'mini_game', at: Date.now(), kind: 'event' };
+}
+
 function startMiniGame() {
   if (!shouldEnterIntermission() || !gameState.miniGamePool.length) {
     startNextRoundConfirm();
     return;
   }
-  const miniGame = pickMiniGame();
-  if (!miniGame) {
-    startNextRoundConfirm();
-    return;
-  }
+  const miniGame = pickMiniGame() || { id: 'tap_signal', title: 'WAIT...TAP' };
   gameState.activeMiniGame = miniGame;
   gameState.miniGamesPlayed = [...(gameState.miniGamesPlayed || []), miniGame.id];
   gameState.miniGamePool = gameState.miniGamePool.filter((m) => m.id !== miniGame.id);
+  const now = Date.now();
+  const jitter =
+    MINI_GAME_SIGNAL_MIN_MS + Math.random() * Math.max(0, MINI_GAME_SIGNAL_MAX_MS - MINI_GAME_SIGNAL_MIN_MS);
+  gameState.miniGameState = { id: 'tap_signal', signalAt: now + jitter, taps: {}, winners: [] };
   setPhase('mini_game', MINI_GAME_DURATION_MS, () => {
     broadcastState();
   });
@@ -859,8 +863,30 @@ function pickRandomEvent() {
   return RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
 }
 
+function recordMiniGameTap(player) {
+  if (!player || gameState.phase !== 'mini_game' || !gameState.miniGameState) return;
+  if (!isPlayerEligible(player.id)) return;
+  const miniGame = gameState.miniGameState;
+  miniGame.taps = miniGame.taps || {};
+  if (miniGame.taps[player.id]) return;
+  const now = Date.now();
+  const early = now < miniGame.signalAt;
+  const delta = early ? undefined : now - miniGame.signalAt;
+  miniGame.taps[player.id] = { at: now, early, delta };
+  const taps = Object.entries(miniGame.taps).filter(([, tap]) => !tap.early && typeof tap.delta === 'number');
+  if (taps.length) {
+    const leaders = taps.sort((a, b) => (a[1].delta || 0) - (b[1].delta || 0)).slice(0, 2);
+    miniGame.winners = leaders.map(([id]) => id);
+    if (leaders[0]?.[0]) {
+      gameState.recentImpact = { from: leaders[0][0], target: null, effect: 'mini_game', at: now, kind: 'event' };
+    }
+  }
+  broadcastState();
+}
+
 function applyRandomEvent(payload) {
   if (!payload) return;
+  const now = Date.now();
   if (payload.effect === 'all_correct_bonus') {
     gameState.allCorrectBonusActive = true;
     broadcastState();
@@ -870,6 +896,7 @@ function applyRandomEvent(payload) {
     payload.targetMode === 'all'
       ? getActivePlayers()
       : [gameState.players.get(payload.targetPlayerId)].filter((p) => p && p.status === 'active');
+  let impactRecorded = false;
   for (const target of targets) {
     if (payload.kind === 'malus' && applyShieldIfPresent(target)) {
       continue;
@@ -899,6 +926,10 @@ function applyRandomEvent(payload) {
       if (target.socketId) {
         io.to(target.socketId).emit('event:shuffleOptions', { order, from: 'случайное событие' });
       }
+    }
+    if (!impactRecorded) {
+      gameState.recentImpact = { from: null, target: target.id, effect: payload.effect, at: now, kind: 'event' };
+      impactRecorded = true;
     }
   }
   broadcastState();
@@ -958,8 +989,10 @@ function buildStatePayload() {
     preQuestionReady: gameState.preQuestionReady,
     categoryVoteStats: gameState.phase === 'category_select' ? {} : computeCategoryVoteStats(),
     activeMiniGame: gameState.activeMiniGame,
+    miniGameState: gameState.miniGameState,
     miniGamesRemaining: gameState.miniGamePool.map((m) => ({ id: m.id, title: m.title })),
     miniGamesPlayed: gameState.miniGamesPlayed,
+    recentImpact: gameState.recentImpact,
     controllerUrl: buildControllerUrl(),
     maxPlayers: MAX_PLAYERS,
   };
@@ -1011,6 +1044,8 @@ function maybeEndGame() {
   const reachedMaxRounds = gameState.roundNumber >= gameState.maxRounds;
   if (noQuestionsLeft || reachedMaxRounds) {
     clearPlayerEventLocks();
+    gameState.miniGameState = null;
+    gameState.recentImpact = null;
     setPhase('game_end');
     return true;
   }
@@ -1052,6 +1087,7 @@ function handleAbilityUse(player, { abilityId, targetPlayerId }) {
     if (target.socketId) {
       io.to(target.socketId).emit('ability:shuffleOptions', { order: shuffledOptions, from: player.nickname });
     }
+    gameState.recentImpact = { from: player.id, target: targetPlayerId, effect: 'shuffle_enemy', at: Date.now(), kind: 'ability' };
   }
 
   if (abilityId === 'freeze_enemy' && targetPlayerId) {
@@ -1063,6 +1099,7 @@ function handleAbilityUse(player, { abilityId, targetPlayerId }) {
     if (target.socketId) {
       io.to(target.socketId).emit('ability:freeze', { durationMs: FREEZE_DURATION_MS, from: player.nickname });
     }
+    gameState.recentImpact = { from: player.id, target: targetPlayerId, effect: 'freeze_enemy', at: Date.now(), kind: 'ability' };
   }
 
   broadcastState();
@@ -1239,6 +1276,12 @@ io.on('connection', (socket) => {
     const player = getPlayerBySocket(socket);
     if (!player || player.status !== 'active') return;
     beginRound();
+  });
+
+  socket.on('player:miniGameTap', () => {
+    const player = getPlayerBySocket(socket);
+    if (!player || player.status !== 'active') return;
+    recordMiniGameTap(player);
   });
 
   socket.on('disconnect', () => {

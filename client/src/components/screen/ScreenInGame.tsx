@@ -8,9 +8,11 @@ interface Props {
   state: GameState;
   activeCategory: Category | null;
   accent?: string;
+  impact?: GameState['recentImpact'] | null;
+  finale?: boolean;
 }
 
-export default function ScreenInGame({ state, activeCategory, accent }: Props) {
+export default function ScreenInGame({ state, activeCategory, accent, impact, finale }: Props) {
   const players = state.players || [];
   const currentQuestion = state.currentQuestion;
 
@@ -24,15 +26,16 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
     switch (state?.phase) {
       case 'round_intro':
         return (
-          <div className="phase-card">
-            <div className="hero-text">Новый раунд</div>
-            <div className="screen-message muted">Готовьтесь к выбору категории</div>
+          <div className="phase-card phase-card--quiet">
+            <div className="hero-text">Раунд {state.roundNumber}</div>
+            <div className="pulse-dot" />
           </div>
         );
       case 'category_select': {
         const categories = (state.categoryOptions || state.categories).slice(0, 4);
         return (
           <div className="phase-card category-select">
+            <div className="phase-chip subtle">Ваш выбор</div>
             <div className="category-grid">
               {categories.map((cat) => (
                 <div
@@ -45,7 +48,6 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
                 </div>
               ))}
             </div>
-            <div className="screen-message muted">Выберите категорию на своих устройствах</div>
             {phaseTimer}
           </div>
         );
@@ -70,7 +72,7 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
                 <div className="category-reveal__meta">
                   <div className="pill pill-ghost">Категория</div>
                   <div className="hero-text">{activeCategory.title}</div>
-                  <div className="screen-message muted">Готовьтесь к вопросу</div>
+                  <div className="screen-message muted">Вдохните</div>
                 </div>
               </div>
             )}
@@ -81,12 +83,12 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
         return (
           <div className="phase-card">
             {state.activeEvent ? (
-              <div className="phase-note highlight">
+              <div className="phase-note highlight pulse">
                 <div className="big">{state.activeEvent.title}</div>
-                {state.activeEvent.description && <div className="muted">{state.activeEvent.description}</div>}
+                <div className="muted subtle">Эффект накрывает игроков</div>
               </div>
             ) : (
-              <div className="phase-note">На этот раунд события нет</div>
+              <div className="phase-note">События нет — поехали</div>
             )}
           </div>
         );
@@ -94,8 +96,7 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
         return (
           <div className="phase-card">
             <div className="hero-text">Подготовка</div>
-            <div className="screen-message muted">Настройте способности перед вопросом</div>
-            <div className="pill-row">
+            <div className="pill-row pill-row--tight">
               {players.map((p) => (
                 <div key={p.id} className={`pill ${state.preQuestionReady?.[p.id] ? 'pill-ready' : ''}`}>
                   {p.nickname}
@@ -109,21 +110,18 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
           <div className="phase-card">
             {currentQuestion && (
               <>
-                <div className="phase-header">
-                  <div className="phase-chip">Вопрос</div>
-                  {activeCategory && (
-                    <div className="category-chip" style={{ ['--accent' as string]: activeCategory.accent || '#22d3ee' }}>
-                      <div className="category-chip__thumb">
-                        {activeCategory.art ? (
-                          <img src={activeCategory.art} alt={activeCategory.title} />
-                        ) : (
-                          <span>{activeCategory.icon || '📚'}</span>
-                        )}
-                      </div>
-                      <span>{activeCategory.title}</span>
+                {activeCategory && (
+                  <div className="category-chip" style={{ ['--accent' as string]: activeCategory.accent || '#22d3ee' }}>
+                    <div className="category-chip__thumb">
+                      {activeCategory.art ? (
+                        <img src={activeCategory.art} alt={activeCategory.title} />
+                      ) : (
+                        <span>{activeCategory.icon || '📚'}</span>
+                      )}
                     </div>
-                  )}
-                </div>
+                    <span>{activeCategory.title}</span>
+                  </div>
+                )}
                 <QuestionPrompt
                   question={currentQuestion}
                   questionStartTime={state.questionStartTime}
@@ -143,7 +141,6 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
                 accent={activeCategory?.accent}
               />
             )}
-            {currentQuestion?.explanation && <div className="phase-note muted">{currentQuestion.explanation}</div>}
           </div>
         );
       case 'score':
@@ -154,49 +151,66 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
               players={players}
               characters={state?.characters || []}
               highlight
+              impact={impact}
             />
           </div>
         );
       case 'intermission':
         return (
           <div className="phase-card">
-            <div className="hero-text">Перерыв</div>
-            <div className="screen-message muted">Скоро начнётся мини-игра</div>
-            <div className="pill-row">
-              {(state.miniGamesRemaining || []).map((m) => (
-                <div key={m.id} className="pill">
-                  {m.title}
-                </div>
-              ))}
-            </div>
+            <div className="hero-text">Передышка</div>
+            <div className="screen-message muted">Следом — мини-рывок</div>
           </div>
         );
       case 'mini_game':
+        if (state.miniGameState) {
+          const now = Date.now();
+          const isSignal = now >= state.miniGameState.signalAt;
+          const winners = state.miniGameState.winners || [];
+          return (
+            <div className="phase-card mini-game-card">
+              <div className={`hero-text ${isSignal ? 'pop' : ''}`}>{isSignal ? 'ЖМИ!' : 'Дышим…'}</div>
+              <div className="mini-game-orb">
+                <div className={`mini-game-orb__core ${isSignal ? 'mini-game-orb__core--signal' : ''}`} />
+              </div>
+              {winners.length > 0 && (
+                <div className="pill-row pill-row--tight">
+                  {winners.map((id) => {
+                    const p = players.find((pl) => pl.id === id);
+                    return (
+                      <div key={id} className="pill pill-ready">
+                        {p?.nickname || 'Игрок'}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
         return (
           <div className="phase-card">
-            {state.activeMiniGame ? (
-              <div className="phase-note highlight">
-                <div className="big">{state.activeMiniGame.title}</div>
-                {state.activeMiniGame.description && <div className="muted">{state.activeMiniGame.description}</div>}
-                {state.activeMiniGame.scoring && <div className="muted">{state.activeMiniGame.scoring}</div>}
-              </div>
-            ) : (
-              <div className="phase-note">Мини-игра выбирается...</div>
-            )}
+            <div className="phase-note">Мини-игра...</div>
           </div>
         );
       case 'next_round_confirm':
         return (
           <div className="phase-card">
-            <div className="hero-text">Готовы продолжить</div>
-            <div className="screen-message muted">Любой игрок может начать следующий раунд</div>
+            <div className="hero-text">Далее?</div>
+            <div className="screen-message muted">Ждём удержание</div>
           </div>
         );
       case 'game_end':
         return (
           <div className="phase-card">
-            <div className="hero-text">Игра завершена</div>
-            <Leaderboard leaderboard={state.leaderboard} players={players} characters={state?.characters || []} />
+            <div className="hero-text">Финал</div>
+            <Leaderboard
+              leaderboard={state.leaderboard}
+              players={players}
+              characters={state?.characters || []}
+              highlight
+              impact={impact}
+            />
           </div>
         );
       default:
@@ -205,7 +219,7 @@ export default function ScreenInGame({ state, activeCategory, accent }: Props) {
   };
 
   return (
-    <div className="screen-stack">
+    <div className={`screen-stack ${finale ? 'screen-stack--finale' : ''}`}>
       {state.narration ? <div className="narration">{state.narration}</div> : null}
       {renderPhaseContent()}
     </div>
