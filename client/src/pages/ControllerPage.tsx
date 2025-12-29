@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
 import { Ability, ActiveEvent, Category, Character, GameState, PlayerState, QuestionOption } from '../types';
 import TimerBar from '../components/TimerBar';
+import HoldToConfirmButton, { DEFAULT_HOLD_MS } from '../components/HoldToConfirmButton';
 
 function reorderOptions(options: QuestionOption[], order?: string[] | null) {
   if (!order || !order.length) return options;
@@ -34,6 +35,8 @@ export default function ControllerPage() {
   const isActivePlayer = me?.status === 'active';
   const hasAnswered = Boolean(me?.lastAnswer);
   const preparedForQuestion = me ? Boolean(state?.preQuestionReady?.[me.id] || me.preparedForQuestion) : false;
+  const availableCharacters = state?.characters || [];
+  const isCharacterSupported = availableCharacters.some((c) => c.id === characterId);
 
   useEffect(() => {
     if (!socket) return;
@@ -123,9 +126,16 @@ export default function ControllerPage() {
   }, [state?.phase, state?.currentQuestion?.id]);
 
   useEffect(() => {
-    if (!state?.characters.length) return;
-    const first = state.characters[0];
-    setCharacterId((prev) => prev || first.id);
+    const characters = state?.characters || [];
+    if (!characters.length) {
+      setCharacterId('');
+      return;
+    }
+    const first = characters[0];
+    setCharacterId((prev) => {
+      const exists = characters.some((c) => c.id === prev);
+      return exists ? prev || first.id : first.id;
+    });
   }, [state?.characters]);
 
   const joinGame = () => {
@@ -135,6 +145,12 @@ export default function ControllerPage() {
       if (!res?.ok) {
         if (res?.error) {
           setJoinError(res.error);
+          const message = res.error.toLowerCase();
+          const missingCharacterError = message.includes('character') || message.includes('персонаж');
+          if (missingCharacterError || !availableCharacters.some((c) => c.id === characterId)) {
+            const fallback = availableCharacters[0]?.id || '';
+            setCharacterId(fallback);
+          }
         }
         return;
       }
@@ -228,6 +244,7 @@ export default function ControllerPage() {
           onJoin={joinGame}
           onNicknameChange={setNickname}
           error={joinError}
+          isCharacterSupported={isCharacterSupported}
         />
       )}
 
@@ -280,9 +297,11 @@ interface ControllerJoinProps {
   onCharacterChange: (value: string) => void;
   onJoin: () => void;
   error?: string;
+  isCharacterSupported: boolean;
 }
 
-function ControllerJoin({ characters, nickname, characterId, onNicknameChange, onCharacterChange, onJoin, error }: ControllerJoinProps) {
+function ControllerJoin({ characters, nickname, characterId, onNicknameChange, onCharacterChange, onJoin, error, isCharacterSupported }: ControllerJoinProps) {
+  const isJoinDisabled = !nickname || !isCharacterSupported;
   return (
     <div className="controller-stage controller-stage--flow controller-stage--stack">
       <div className="controller-title">Войти</div>
@@ -302,10 +321,13 @@ function ControllerJoin({ characters, nickname, characterId, onNicknameChange, o
         </div>
         <div className="stacked-inputs">
           <input className="input" value={nickname} onChange={(e) => onNicknameChange(e.target.value)} placeholder="Имя" />
-          <button className="button-primary cta-button primary-action controller-main-button" onClick={onJoin} disabled={!nickname}>
+          <button className="button-primary cta-button primary-action controller-main-button" onClick={onJoin} disabled={isJoinDisabled}>
             Войти
           </button>
         </div>
+        {characters.length > 0 && !isCharacterSupported && (
+          <div className="alert-warning">Этот персонаж недоступен. Выберите другого.</div>
+        )}
         {error && <div className="alert-warning">{error}</div>}
       </div>
     </div>
@@ -315,7 +337,7 @@ function ControllerJoin({ characters, nickname, characterId, onNicknameChange, o
 function ControllerReadyButton({ onReady, disabled }: { onReady: () => void; disabled?: boolean }) {
   return (
     <div className="controller-stage controller-centered">
-      <button className="button-primary primary-action controller-main-button" onClick={onReady} disabled={disabled}>
+      <button className="ready-button" onClick={onReady} disabled={disabled}>
         Готов
       </button>
     </div>
@@ -333,16 +355,8 @@ function ControllerWaitStart() {
 function ControllerStartButton({ onStart }: { onStart: () => void }) {
   return (
     <div className="controller-stage controller-centered">
-      <div className="start-wrapper">
-        <div className="start-ring">
-          <svg viewBox="0 0 200 200" className="start-ring-svg" aria-hidden="true">
-            <circle cx="100" cy="100" r="92" />
-          </svg>
-        </div>
-        <button className="start-button" onClick={onStart} aria-label="Начать игру" type="button">
-          <span>Начать</span>
-        </button>
-      </div>
+      <HoldToConfirmButton label="Начать" onConfirm={onStart} holdMs={DEFAULT_HOLD_MS} size={200} />
+      <div className="info-banner subtle">Зажмите, чтобы начать</div>
     </div>
   );
 }
@@ -425,9 +439,8 @@ function ControllerInGame({
     return (
       <div className="controller-stage controller-centered">
         {statusBanner}
-        <button className="button-primary primary-action controller-main-button" onClick={continueNextRound}>
-          Продолжить
-        </button>
+        <HoldToConfirmButton label="Продолжить" onConfirm={continueNextRound} holdMs={DEFAULT_HOLD_MS} size={190} />
+        <div className="info-banner subtle">Удерживайте, чтобы идти дальше</div>
       </div>
     );
   }
