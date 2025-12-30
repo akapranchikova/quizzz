@@ -247,6 +247,7 @@ button {
 .character-thumb img {
   width: 100%;
   height: 100%;
+    overflow: hidden;
   object-fit: contain;
 }
 
@@ -292,6 +293,7 @@ button {
 }
 
 .hold-button {
+    user-select: none;
   position: relative;
   width: var(--hold-size, 190px);
   height: var(--hold-size, 190px);
@@ -304,6 +306,7 @@ button {
   height: 100%;
   border-radius: 50%;
   border: none;
+    user-select: none;
   color: #fff;
   font-size: clamp(22px, 5vw, 28px);
   font-weight: 800;
@@ -313,9 +316,12 @@ button {
   backdrop-filter: blur(8px);
   transition: transform 0.12s ease, box-shadow 0.2s ease;
   touch-action: none;
+    --hold-ms: 1200ms;
+    --circ: 276.46;
 }
 
 .hold-button__core:active {
+    user-select: none;
   transform: scale(0.97);
   box-shadow: 0 0 30px rgba(34, 211, 238, 0.25);
 }
@@ -351,6 +357,33 @@ button {
   stroke-width: 10;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.06s linear;
+}
+
+
+.hold-button__ring-progress {
+    stroke-dasharray: var(--circ);
+    stroke-dashoffset: var(--circ); /* 0% заполнения */
+    transform-origin: 50% 50%;
+}
+
+/* когда удерживаем — проигрываем анимацию заполнения по кругу */
+.hold-button.is-holding .hold-button__ring-progress {
+    animation: holdFill var(--hold-ms) linear forwards;
+}
+
+/* если отпустили — мгновенно сбрасываем (без анимации назад) */
+.hold-button:not(.is-holding) .hold-button__ring-progress {
+    animation: none;
+    stroke-dashoffset: var(--circ);
+}
+
+@keyframes holdFill {
+    from {
+        stroke-dashoffset: var(--circ);
+    }
+    to {
+        stroke-dashoffset: 0;
+    }
 }
 
 .mobile-answer-grid {
@@ -460,6 +493,7 @@ button {
 .question-text {
   font-size: clamp(26px, 3.4vw, 40px);
   font-weight: 800;
+    margin-bottom: 20px;
   line-height: 1.2;
 }
 
@@ -1179,16 +1213,12 @@ button {
 .screen-panel {
   width: 100%;
   max-width: none;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 28px;
+  /*background: rgba(255, 255, 255, 0.03);*/
   padding: 32px;
   display: grid;
   grid-template-columns: 1fr;
   align-items: center;
   gap: 28px;
-  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(22px);
   transition: transform 0.35s ease, opacity 0.35s ease;
 }
 
@@ -1199,6 +1229,7 @@ button {
 .screen-panel__content {
   display: flex;
   flex-direction: column;
+    text-align: center;
   gap: 12px;
 }
 
@@ -1371,12 +1402,7 @@ button {
 }
 
 .phase-card {
-  background: rgba(7, 9, 26, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
   padding: 20px 22px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(16px);
   transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
@@ -1436,9 +1462,6 @@ button {
 
 .phase-chip {
   padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -2268,4 +2291,14 @@ button {
   .screen-panel {
     padding: 22px;
   }
+}
+
+
+button,
+.tappable,
+.hold-button,
+.hold-button * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none; /* iOS: меню копировать/выделить */
 }

@@ -36,7 +36,7 @@ export default function ScreenInGame({ state, activeCategory, accent, impact, fi
         const categories = (state.categoryOptions || state.categories).slice(0, 4);
         return (
           <div className="phase-card category-select">
-            <div className="phase-chip subtle">Ваш выбор</div>
+            <div className="phase-chip subtle">Выберите категорию</div>
             <div className="category-grid">
               {categories.map((cat) => (
                 <div
@@ -192,7 +192,7 @@ export default function ScreenInGame({ state, activeCategory, accent, impact, fi
 
   return (
     <div className={`screen-stack ${finale ? 'screen-stack--finale' : ''}`}>
-      {state.narration ? <div className="narration">{state.narration}</div> : null}
+      {/*{state.narration ? <div className="narration">{state.narration}</div> : null}*/}
       {renderPhaseContent()}
     </div>
   );

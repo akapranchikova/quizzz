@@ -374,7 +374,7 @@ function ControllerJoin({ characters, nickname, characterId, onNicknameChange, o
   const isJoinDisabled = !nickname || !isCharacterSupported;
   return (
     <div className="controller-stage controller-stage--flow controller-stage--stack controller-stage--join">
-      <div className="controller-title">Войти</div>
+      <div className="controller-title">Выберите персонажа</div>
       <div className="controller-stack">
         <div className="character-grid">
           {characters.map((character) => (
